@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotel Costa Azul - Políticas de Cancelación</title>
+    <link rel="stylesheet" href="poli.css">
+</head>
+<body>
+
+    <!-- Encabezado / Navbar -->
+    <header class="navbar">
+        <div class="logo">Hotel Costa Azul</div>
+        <nav class="nav-links">
+            <a href="../Reportes/repo.html">Reportes</a>
+            <a href="../Tarifas/tari.html">Tarifas</a>
+            <a href="#" class="active">Políticas</a>
+        </nav>
+        <div class="user-profile">
+            <span class="user-name">Sofía Reyes</span>
+            <span class="user-role">Administrador</span>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <div class="main-layout">
+        
+        <!-- Panel Izquierdo: Tabla de Políticas -->
+        <main class="content-panel">
+            <h1 class="page-title">Políticas de cancelación</h1>
+            <p class="page-subtitle">Hoy · 12 nov 2026 · reglas que se aplican a las nuevas reservaciones</p>
+
+            <div class="table-card">
+                <table class="policies-table">
+                    <thead>
+                        <tr>
+                            <th>DESCRIPCIÓN</th>
+                            <th>DESDE</th>
+                            <th>HASTA</th>
+                            <th>ESTADO</th>
+                        </tr>
+                    </thead>
+                    <tbody id="policiesTableBody">
+                        <!-- Política Vigente -->
+                        <tr class="row-highlight">
+                            <td class="desc-cell">Cancelación gratuita hasta 48 horas antes de la fecha de entrada. Después, se cobra la primera noche.</td>
+                            <td>01 jul 2026</td>
+                            <td>—</td>
+                            <td><span class="badge badge-vigente">Vigente</span></td>
+                        </tr>
+                        <!-- Política Histórica -->
+                        <tr>
+                            <td class="desc-cell">Cancelación gratuita hasta 24 horas antes de la fecha de entrada. Después, se cobra la primera noche.</td>
+                            <td>01 ene 2026</td>
+                            <td>30 jun 2026</td>
+                            <td><span class="badge badge-historica">Histórica</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="table-footer-note">
+                    Cada reservación conserva la política que estaba vigente cuando se hizo, aunque después cambie.
+                </p>
+            </div>
+        </main>
+
+        <!-- Panel Derecho: Formulario Nueva Política -->
+        <aside class="form-panel">
+            <h2>Nueva política</h2>
+            <p class="form-subtitle">Al guardar, la política actual pasa a histórica.</p>
+
+            <form id="policyForm">
+                <div class="form-group">
+                    <label for="policyDesc">Descripción de reglas y penalizaciones</label>
+                    <textarea id="policyDesc" rows="5" placeholder="Escribe las reglas..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="startDate">Vigente desde</label>
+                    <input type="date" id="startDate" required>
+                </div>
+
+                <button type="submit" class="btn-submit">Guardar nueva política</button>
+            </form>
+
+            <p class="disclaimer-text">
+                Una política guardada no se edita: para cambiarla se crea una nueva.
+            </p>
+        </aside>
+
+    </div>
+
+    <script src="poli.js"></script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotel Costa Azul - Tarifas</title>
+    <link rel="stylesheet" href="tari.css">
+</head>
+<body>
+
+    <!-- Encabezado / Navbar -->
+    <header class="navbar">
+        <div class="logo">Hotel Costa Azul</div>
+        <nav class="nav-links">
+            <a href="../Reportes/repo.html">Reportes</a>
+            <a href="#" class="active">Tarifas</a>
+            <a href="#">Políticas</a>
+        </nav>
+        <div class="user-profile">
+            <span class="user-name">Sofía Reyes</span>
+            <span class="user-role">Administrador</span>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <div class="main-layout">
+        
+        <!-- Panel Izquierdo: Tabla de Tarifas -->
+        <main class="content-panel">
+            <h1 class="page-title">Tarifas</h1>
+            <p class="page-subtitle">Hoy · 12 nov 2026 · precio por noche según el tipo de habitación</p>
+
+            <div class="table-card">
+                <table class="rates-table">
+                    <thead>
+                        <tr>
+                            <th>TIPO</th>
+                            <th>PRECIO POR NOCHE</th>
+                            <th>DESDE</th>
+                            <th>HASTA</th>
+                            <th>ESTADO</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ratesTableBody">
+                        <!-- Tarifas Vigentes -->
+                        <tr class="row-highlight">
+                            <td><strong>Sencilla</strong></td>
+                            <td>$850.00</td>
+                            <td>01 jul 2026</td>
+                            <td>—</td>
+                            <td><span class="badge badge-vigente">Vigente</span></td>
+                        </tr>
+                        <tr class="row-highlight">
+                            <td><strong>Doble</strong></td>
+                            <td>$1,250.00</td>
+                            <td>01 jul 2026</td>
+                            <td>—</td>
+                            <td><span class="badge badge-vigente">Vigente</span></td>
+                        </tr>
+                        <!-- Tarifas Históricas -->
+                        <tr>
+                            <td>Sencilla</td>
+                            <td>$800.00</td>
+                            <td>01 ene 2026</td>
+                            <td>30 jun 2026</td>
+                            <td><span class="badge badge-historica">Histórica</span></td>
+                        </tr>
+                        <tr>
+                            <td>Doble</td>
+                            <td>$1,100.00</td>
+                            <td>01 ene 2026</td>
+                            <td>30 jun 2026</td>
+                            <td><span class="badge badge-historica">Histórica</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="table-footer-note">
+                    Las tarifas históricas se conservan porque las reservaciones hechas con ellas siguen usando su precio original.
+                </p>
+            </div>
+        </main>
+
+        <!-- Panel Derecho: Formulario Nueva Tarifa -->
+        <aside class="form-panel">
+            <h2>Nueva tarifa</h2>
+            <p class="form-subtitle">Al guardar, la tarifa actual del mismo tipo pasa a histórica.</p>
+
+            <form id="rateForm">
+                <div class="form-group">
+                    <label for="roomType">Tipo de habitación</label>
+                    <select id="roomType" required>
+                        <option value="Sencilla">Sencilla</option>
+                        <option value="Doble">Doble</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="roomPrice">Precio por noche</label>
+                    <input type="number" id="roomPrice" step="0.01" placeholder="$ 0.00" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="startDate">Vigente desde</label>
+                    <input type="date" id="startDate" required>
+                </div>
+
+                <button type="submit" class="btn-submit">Guardar nueva tarifa</button>
+            </form>
+
+            <p class="disclaimer-text">
+                Una tarifa guardada no se edita: para cambiar un precio se crea una nueva. Las reservaciones existentes conservan su precio.
+            </p>
+        </aside>
+
+    </div>
+
+    <script src="tari.js"></script>
+</body>
+</html>
