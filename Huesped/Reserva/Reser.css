@@ -1,0 +1,668 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f4efe6;
+  color: #1a293e;
+  min-height: 100vh;
+}
+
+/* Navbar Superior */
+.navbar {
+  background-color: #0f2540;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 60px;
+  color: #ffffff;
+}
+
+.nav-brand {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem;
+  letter-spacing: 0.5px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 30px;
+}
+
+.nav-links a {
+  color: #a8b2c1;
+  text-decoration: none;
+  font-size: 0.95srem;
+  font-weight: 400;
+  position: relative;
+  padding-bottom: 4px;
+  transition: color 0.2s ease;
+}
+
+.nav-links a.active, .nav-links a:hover {
+  color: #ffffff;
+}
+
+.nav-links a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: #ffffff;
+}
+
+/* Layout Principal */
+.main-container {
+  display: flex;
+  gap: 30px;
+  max-width: 1300px;
+  margin: 30px auto;
+  padding: 0 20px;
+}
+
+/* Sección Izquierda */
+.left-section {
+  flex: 1.3;
+  background-color: #ffffff;
+  border: 1px solid #e2dac9;
+  border-radius: 12px;
+  padding: 35px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+}
+
+.left-section h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.2rem;
+  font-weight: 400;
+  color: #111d2e;
+  margin-bottom: 25px;
+}
+
+/* Indicador de Pasos */
+.steps-indicator {
+  display: flex;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #8c857b;
+  font-weight: 500;
+}
+
+.step.completed .step-icon {
+  background-color: #4a6b41;
+  color: white;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+}
+
+.step.active {
+  color: #111d2e;
+  font-weight: 600;
+}
+
+.step.active .step-number {
+  background-color: #0f2540;
+  color: white;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+
+.step-line {
+  flex: 1;
+  height: 1px;
+  background-color: #d4cebe;
+  margin: 0 15px;
+}
+
+/* Filtro de Fechas */
+.filter-box {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 30px;
+  align-items: flex-end;
+}
+
+.date-input-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.date-input-group label {
+  font-size: 0.82rem;
+  color: #6b665d;
+  font-weight: 600;
+}
+
+.input-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-field i {
+  position: absolute;
+  left: 12px;
+  color: #7a756c;
+  font-size: 0.95rem;
+}
+
+.input-field input {
+  width: 100%;
+  padding: 11px 12px 11px 38px;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  background-color: #faf8f5;
+  font-size: 0.9rem;
+  color: #2b2b2b;
+  font-family: 'Poppins', sans-serif;
+  outline: none;
+}
+
+.btn-availability {
+  padding: 11px 20px;
+  background-color: #f0eae1;
+  border: 1px solid #d4cebe;
+  color: #1a293e;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Poppins', sans-serif;
+  transition: background 0.2s;
+}
+
+.btn-availability:hover {
+  background-color: #e5dccf;
+}
+
+/* Tarjetas de Habitaciones */
+.rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.room-card {
+  display: flex;
+  gap: 20px;
+  border: 1px solid #d4cebe;
+  border-radius: 10px;
+  padding: 16px;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  align-items: center;
+}
+
+.room-card img {
+  width: 160px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.room-card.selected {
+  border: 2px solid #3c5630;
+  background-color: #fafcf8;
+}
+
+.room-details {
+  flex: 1;
+}
+
+.room-details h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem;
+  color: #111d2e;
+  margin-bottom: 6px;
+}
+
+.badge.available {
+  background-color: #e2edd8;
+  color: #35522b;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.room-details p {
+  font-size: 0.85rem;
+  color: #7a756c;
+}
+
+.room-pricing {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.room-pricing .price {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: #111d2e;
+}
+
+.room-pricing .period {
+  font-size: 0.75rem;
+  color: #7a756c;
+  margin-bottom: 6px;
+}
+
+.btn-select-room {
+  padding: 8px 18px;
+  background-color: #e8e2d5;
+  border: none;
+  border-radius: 6px;
+  color: #1a293e;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-select-room.selected-btn {
+  background-color: #0f2540;
+  color: #ffffff;
+}
+
+/* Sección Derecha: Tus Datos */
+.right-section {
+  flex: 0.9;
+}
+
+.card-box {
+  background-color: #ffffff;
+  border: 1px solid #e2dac9;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+}
+
+.card-box h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 400;
+  color: #111d2e;
+  margin-bottom: 2px;
+}
+
+.step-subtitle {
+  font-size: 0.82rem;
+  color: #7a756c;
+  display: block;
+  margin-bottom: 20px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 15px;
+}
+
+.input-group label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #2b2b2b;
+}
+
+.input-group textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  background-color: #faf8f5;
+  font-size: 0.88rem;
+  font-family: 'Poppins', sans-serif;
+  height: 75px;
+  resize: none;
+  outline: none;
+}
+
+/* Tarjeta de Resumen */
+.summary-card {
+  background-color: #f4efe6;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 20px 0;
+}
+
+.summary-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #111d2e;
+  margin-bottom: 6px;
+}
+
+.summary-room-info {
+  font-size: 0.88rem;
+  color: #2b2b2b;
+  font-weight: 500;
+}
+
+.summary-dates {
+  font-size: 0.8rem;
+  color: #7a756c;
+  margin-bottom: 12px;
+}
+
+.summary-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #d4cebe;
+  padding-top: 10px;
+  font-weight: 600;
+}
+
+.total-price {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  color: #111d2e;
+}
+
+.btn-reserve-now {
+  width: 100%;
+  padding: 14px;
+  background-color: #0f2540;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-reserve-now:hover {
+  background-color: #18355a;
+}
+
+.security-note {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #7a756c;
+  margin-top: 12px;
+}
+
+.back-link {
+  display: block;
+  text-align: center;
+  margin-top: 15px;
+  font-size: 0.85rem;
+  color: #1a293e;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+/* Responsividad para móviles */
+@media (max-width: 900px) {
+  .main-container {
+    flex-direction: column;
+  }
+}
+
+/* --- Estilos para el Modal Flotante --- */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background-color: rgba(15, 37, 64, 0.5); /* Fondo semitransparente oscuro */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.modal-content {
+  background-color: #f4efe6;
+  border: 1px solid #d4cebe;
+  border-radius: 16px;
+  padding: 40px 30px;
+  width: 90%;
+  max-width: 450px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  animation: modalScale 0.25s ease-in-out;
+}
+
+@keyframes modalScale {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.modal-icon {
+  width: 55px;
+  height: 55px;
+  background-color: #faebd7;
+  border: 1px solid #e6d2b5;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0 auto 20px auto;
+  color: #bfa15f;
+  font-size: 1.5rem;
+}
+
+.modal-content h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem;
+  color: #111d2e;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.modal-content p {
+  font-size: 0.9rem;
+  color: #7a756c;
+  margin-bottom: 25px;
+}
+
+.modal-btn {
+  width: 100%;
+  padding: 13px;
+  background-color: #0f2540;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-family: 'Poppins', sans-serif;
+}
+
+.modal-btn:hover {
+  background-color: #18355a;
+}
+
+/* --- Estilos específicos para el Modal de Confirmación (Éxito) --- */
+.success-box {
+  max-width: 520px !important;
+  padding: 35px 40px !important;
+  text-align: left !important;
+}
+
+.success-icon {
+  background-color: #e2edd8 !important;
+  border-color: #c8dcbc !important;
+  color: #35522b !important;
+  margin: 0 auto 15px auto !important;
+}
+
+.success-box h2 {
+  text-align: center;
+  font-size: 1.7rem !important;
+  margin-bottom: 4px !important;
+}
+
+.success-subtitle {
+  text-align: center;
+  font-size: 0.88rem !important;
+  margin-bottom: 20px !important;
+}
+
+/* Caja del código de confirmación */
+.conf-box {
+  background-color: #faf8f5;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.conf-label {
+  display: block;
+  font-size: 0.75rem;
+  color: #7a756c;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.conf-code {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #111d2e;
+  letter-spacing: 2px;
+}
+
+/* Detalles del resumen dentro del modal */
+.success-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  font-size: 0.88rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  color: #7a756c;
+  border-bottom: 1px solid #eae5db;
+  padding-bottom: 8px;
+}
+
+.detail-row span:last-child {
+  color: #111d2e;
+  font-weight: 600;
+}
+
+/* Banner de advertencia amarillo */
+.warning-banner {
+  background-color: #faebd7;
+  border: 1px solid #e6d2b5;
+  color: #8c6d33;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin-bottom: 25px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Botones inferiores del modal de éxito */
+.success-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-cancel-action {
+  flex: 1;
+  padding: 12px;
+  background-color: #ffffff;
+  border: 1px solid #d4cebe;
+  color: #1a293e;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: 'Poppins', sans-serif;
+}
+
+.btn-pay-action {
+  flex: 1.3;
+  padding: 12px;
+  background-color: #e8e2d5;
+  border: 1px solid #d4cebe;
+  color: #1a293e;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: 'Poppins', sans-serif;
+}
+
+.btn-ready-action {
+  flex: 1;
+  padding: 12px;
+  background-color: #0f2540;
+  border: none;
+  color: #ffffff;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: 'Poppins', sans-serif;
+}
+
+.btn-cancel-action:hover, .btn-pay-action:hover {
+  background-color: #dfd7c7;
+}
+
+.btn-ready-action:hover {
+  background-color: #18355a;
+}

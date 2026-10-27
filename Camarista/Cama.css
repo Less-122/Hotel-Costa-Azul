@@ -1,0 +1,269 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f4efe6;
+  color: #1a293e;
+  min-height: 100vh;
+}
+
+/* Navbar de Camarista */
+.navbar {
+  background-color: #0f2540;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 30px;
+  color: #ffffff;
+}
+
+.nav-brand {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem;
+  letter-spacing: 0.5px;
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: #1d3557;
+  padding: 6px 14px;
+  border-radius: 20px;
+}
+
+.user-avatar {
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.user-role {
+  font-size: 0.68rem;
+  color: #a8b2c1;
+}
+
+/* Layout Principal */
+.main-container {
+  max-width: 550px;
+  margin: 25px auto;
+  padding: 0 15px;
+}
+
+.welcome-area {
+  margin-bottom: 20px;
+}
+
+.welcome-area h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2rem;
+  font-weight: 400;
+  color: #111d2e;
+  margin-bottom: 2px;
+}
+
+.welcome-area p {
+  font-size: 0.85rem;
+  color: #7a756c;
+}
+
+/* Lista de Habitaciones */
+.rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 25px;
+}
+
+.room-card {
+  background-color: #ffffff;
+  border: 1px solid #d4cebe;
+  border-radius: 12px;
+  padding: 18px 22px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.02);
+  transition: all 0.2s ease;
+}
+
+.room-card.expanded {
+  border: 2px solid #0f2540;
+  background-color: #ffffff;
+}
+
+.room-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.room-card-header h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.25rem;
+  color: #111d2e;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.room-type {
+  font-size: 0.8rem;
+  color: #7a756c;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Badges */
+.badge {
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.badge.dirty {
+  background-color: #fef0cd;
+  color: #8c6d33;
+}
+
+.badge.clean {
+  background-color: #e2edd8;
+  color: #35522b;
+}
+
+.badge.maintenance {
+  background-color: #fce8e6;
+  color: #a83232;
+}
+
+.open-link {
+  font-size: 0.82rem;
+  color: #7a756c;
+  font-weight: 500;
+}
+
+/* Cuerpo desplegable de la tarjeta */
+.room-card-body {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #eae5db;
+}
+
+.change-state-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #7a756c;
+  margin-bottom: 10px;
+}
+
+.state-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.state-btn {
+  flex: 1;
+  padding: 11px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Poppins', sans-serif;
+  transition: all 0.2s;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+}
+
+.clean-btn {
+  background-color: #faf8f5;
+  border: 1px solid #d4cebe;
+  color: #1a293e;
+}
+
+.clean-btn.active {
+  background-color: #0f2540;
+  border-color: #0f2540;
+  color: #ffffff;
+}
+
+.dirty-btn {
+  background-color: #faf8f5;
+  border: 1px solid #d4cebe;
+  color: #1a293e;
+}
+
+.dirty-btn.active {
+  background-color: #fef0cd;
+  border-color: #e6d2b5;
+  color: #8c6d33;
+}
+
+.maint-btn {
+  width: 100%;
+  background-color: #faf8f5;
+  border: 1px solid #d4cebe;
+  color: #1a293e;
+}
+
+.maint-btn.active {
+  background-color: #fce8e6;
+  border-color: #f5c2c7;
+  color: #a83232;
+}
+
+/* Notificación Verde Inferior */
+.success-notification-box {
+  background-color: #e2edd8;
+  border: 1px solid #c8dcbc;
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+}
+
+.success-icon {
+  width: 32px;
+  height: 32px;
+  background-color: #35522b;
+  color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.success-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  color: #35522b;
+}
+
+.success-text b {
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}

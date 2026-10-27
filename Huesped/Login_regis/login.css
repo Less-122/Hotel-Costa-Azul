@@ -1,0 +1,197 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Poppins:wght@300;400;500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f4efe6;
+}
+
+.login-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+}
+
+/* Sección Izquierda */
+.hero-section {
+  flex: 1;
+  background: linear-gradient(to top, rgba(15, 28, 48, 0.75), rgba(0, 0, 0, 0.1)),
+              url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop') no-repeat center center/cover;
+  display: flex;
+  align-items: flex-end;
+  padding: 60px 50px;
+}
+
+.hero-content {
+  color: #ffffff;
+}
+
+.hero-content h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.8rem;
+  font-weight: 400;
+  margin-bottom: 8px;
+}
+
+.hero-content p {
+  font-size: 1.05rem;
+  font-weight: 300;
+  opacity: 0.9;
+}
+
+/* Sección Derecha */
+.form-section {
+  flex: 1;
+  background-color: #f4efe6;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 10%;
+  position: relative;
+}
+
+.header-brand {
+  position: absolute;
+  top: 50px;
+  left: 10%;
+}
+
+.header-brand h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem;
+  color: #1a293e;
+  font-weight: 600;
+}
+
+.header-brand span {
+  font-size: 0.85rem;
+  color: #7a756c;
+}
+
+.welcome-text {
+  margin-bottom: 35px;
+}
+
+.welcome-text h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.5rem;
+  color: #111d2e;
+  font-weight: 400;
+  margin-bottom: 10px;
+}
+
+.welcome-text p {
+  color: #6b665d;
+  font-size: 0.95rem;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1a293e;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper input {
+  width: 100%;
+  padding: 14px 16px 14px 45px;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  background-color: #ffffff;
+  font-size: 0.95rem;
+  color: #2b2b2b;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-wrapper input:focus {
+  border-color: #0f2540;
+  box-shadow: 0 0 0 3px rgba(15, 37, 64, 0.1);
+}
+
+.icon-left {
+  position: absolute;
+  left: 16px;
+  color: #5c626b;
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+
+.icon-toggle-password {
+  position: absolute;
+  right: 16px;
+  color: #1a293e;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.btn-submit {
+  margin-top: 10px;
+  padding: 15px;
+  background-color: #0f2540;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.btn-submit:hover {
+  background-color: #18355a;
+}
+
+.form-footer {
+  margin-top: 25px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #7a756c;
+}
+
+.form-footer a {
+  color: #8c783e;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    display: none;
+  }
+  .form-section {
+    padding: 40px 25px;
+  }
+  .header-brand {
+    position: relative;
+    top: 0;
+    left: 0;
+    margin-bottom: 30px;
+  }
+}

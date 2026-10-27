@@ -1,0 +1,365 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f4efe6;
+  color: #1a293e;
+  min-height: 100vh;
+}
+
+/* Navbar Superior */
+.navbar {
+  background-color: #0f2540;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 60px;
+  color: #ffffff;
+}
+
+.nav-brand {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem;
+  letter-spacing: 0.5px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 30px;
+}
+
+.nav-links a {
+  color: #a8b2c1;
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 400;
+  position: relative;
+  padding-bottom: 4px;
+  transition: color 0.2s ease;
+}
+
+.nav-links a.active, .nav-links a:hover {
+  color: #ffffff;
+}
+
+.nav-links a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: #ffffff;
+}
+
+/* Layout Principal */
+.main-container {
+  display: flex;
+  gap: 30px;
+  max-width: 1250px;
+  margin: 35px auto;
+  padding: 0 20px;
+}
+
+/* Sección Izquierda */
+.left-section {
+  flex: 1.2;
+  background-color: #ffffff;
+  border: 1px solid #e2dac9;
+  border-radius: 12px;
+  padding: 35px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+}
+
+.left-section h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.2rem;
+  font-weight: 400;
+  color: #111d2e;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: #7a756c;
+  margin-bottom: 25px;
+}
+
+/* Formulario Buscador */
+.search-form {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  margin-bottom: 25px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.search-form .input-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.input-group label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #2b2b2b;
+}
+
+.input-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-field i {
+  position: absolute;
+  left: 14px;
+  color: #7a756c;
+  font-size: 0.95rem;
+}
+
+.input-field input {
+  width: 100%;
+  padding: 12px 14px 12px 40px;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  background-color: #faf8f5;
+  font-size: 0.9rem;
+  color: #2b2b2b;
+  font-family: 'Poppins', sans-serif;
+  outline: none;
+}
+
+.btn-search {
+  padding: 12px 22px;
+  background-color: #e8e2d5;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  color: #1a293e;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Poppins', sans-serif;
+}
+
+.btn-search:hover {
+  background-color: #dfd7c7;
+}
+
+/* Tarjeta de Resumen de la Reserva (Izquierda) */
+.reservation-summary-card {
+  background-color: #faf8f5;
+  border: 1px solid #e2dac9;
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 25px;
+}
+
+.res-guest-name {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.25rem;
+  color: #111d2e;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.res-info-details {
+  font-size: 0.85rem;
+  color: #7a756c;
+  margin-bottom: 12px;
+}
+
+.res-financials {
+  font-size: 0.85rem;
+  color: #555048;
+  margin-bottom: 15px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.res-financials b {
+  color: #111d2e;
+}
+
+.balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #e6dccb;
+  padding-top: 12px;
+}
+
+.balance-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111d2e;
+}
+
+.balance-amount {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #111d2e;
+}
+
+/* Opciones de Tipo de Pago (Anticipo / Liquidación) */
+.payment-type-options {
+  display: flex;
+  gap: 12px;
+}
+
+.type-btn {
+  flex: 1;
+  padding: 12px;
+  background-color: #faf8f5;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a293e;
+  cursor: pointer;
+  font-family: 'Poppins', sans-serif;
+  transition: all 0.2s;
+}
+
+.type-btn.active {
+  background-color: #0f2540;
+  border-color: #0f2540;
+  color: #ffffff;
+}
+
+/* Sección Derecha: Datos de la tarjeta */
+.right-section {
+  flex: 1;
+}
+
+.card-box {
+  background-color: #ffffff;
+  border: 1px solid #e2dac9;
+  border-radius: 12px;
+  padding: 35px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+}
+
+.card-box h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 400;
+  color: #111d2e;
+  margin-bottom: 22px;
+}
+
+.form-row {
+  display: flex;
+  gap: 15px;
+}
+
+.form-row .input-group {
+  flex: 1;
+}
+
+/* Caja de Total a pagar (Derecha) */
+.total-to-pay-box {
+  background-color: #faf8f5;
+  border: 1px solid #e2dac9;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 20px 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #111d2e;
+}
+
+.total-pay-amount {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+/* Botón Pagar */
+.btn-pay-submit {
+  width: 100%;
+  padding: 15px;
+  background-color: #0f2540;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Poppins', sans-serif;
+  transition: background 0.2s;
+}
+
+.btn-pay-submit:hover {
+  background-color: #18355a;
+}
+
+.secure-note {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #7a756c;
+  margin-top: 14px;
+}
+
+.back-link {
+  display: block;
+  text-align: center;
+  margin-top: 18px;
+  font-size: 0.85rem;
+  color: #1a293e;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+/* Responsividad */
+@media (max-width: 900px) {
+  .main-container {
+    flex-direction: column;
+  }
+  .navbar {
+    padding: 15px 20px;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+/* --- Estilos para la Alerta de Error en Pagar --- */
+.error-alert-box {
+  background-color: #fce8e6;
+  border: 1px solid #f5c2c7;
+  color: #a83232;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

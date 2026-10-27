@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotel Costa Azul - Acceso del personal</title>
+  
+  <!-- Iconos de FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- 1. CONEXIÓN CON EL ARCHIVO CSS -->
+  <link rel="stylesheet" href="./login.css">
+</head>
+<body>
+
+  <div class="login-container">
+    
+    <!-- Sección Izquierda (Imagen de fondo y texto) -->
+    <div class="hero-section">
+      <div class="hero-content">
+        <h1>Hotel Costa Azul</h1>
+        <p>Tu descanso empieza aquí.</p>
+      </div>
+    </div>
+
+    <!-- Sección Derecha (Formulario) -->
+    <div class="form-section">
+      
+      <div class="header-brand">
+        <h2>Hotel Costa Azul</h2>
+        <span>Acceso del personal</span>
+      </div>
+
+      <div class="welcome-text">
+        
+        <h1>Bienvenido de nuevo</h1>
+        <p>Ingresa con tu cuenta para continuar.</p>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        
+        <!-- Campo Usuario -->
+        <div class="input-group">
+          <label for="username">Usuario</label>
+          <div class="input-wrapper">
+            <i class="fa-regular fa-user icon-left"></i>
+            <input type="text" id="username" placeholder="Ej. recepcion01" required>
+          </div>
+        </div>
+
+        <!-- Campo Contraseña -->
+        <div class="input-group">
+          <label for="password">Contraseña</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock icon-left"></i>
+            <input type="password" id="password" required>
+            <i class="fa-regular fa-eye icon-toggle-password" id="togglePassword"></i>
+          </div>
+        </div>
+
+        <!-- Botón Iniciar Sesión -->
+        <button type="submit" class="btn-submit">Iniciar sesión</button>
+
+      </form>
+
+      <!-- Pie del Formulario -->
+      <div class="form-footer">
+        ¿Eres personal nuevo? <a href="#">Crear cuenta</a>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- 2. CONEXIÓN CON EL ARCHIVO JAVASCRIPT -->
+  <script src="./login.js"></script>
+</body>
+</html>
