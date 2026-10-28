@@ -23,12 +23,14 @@
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
       <a href="#habitaciones">Habitaciones</a>
-      <a href="#promociones">Promociones</a>
-      <a href="#resenas">Reseñas</a>
+      <a href="../Huesped/Reserva/Reser.html">Reservar</a>
+      <a href="../Huesped/Pagar/pagar.html">Pagar</a>
+      <a href="../Huesped/Cancelar/Cance.html">Cancelar reservación</a>
       <a href="#contacto">Contacto</a>
     </nav>
     <div class="nav-auth">
-      <a href="Login_regis/index.html" class="btn-login"><i class="fa-regular fa-user"></i> Iniciar sesión</a>
+      <!-- RNF-09: el personal entra SIEMPRE por el login; el huésped no necesita cuenta -->
+      <a href="../Login/login.html" class="btn-login" data-rf="RNF-09"><i class="fa-regular fa-user"></i> Acceso del personal</a>
     </div>
   </header>
 
@@ -38,24 +40,16 @@
       <div class="carousel-slide active" style="background-image: url('https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=1400&auto=format&fit=crop');">
         <div class="carousel-caption">
           <h2>Habitación Sencilla</h2>
-          <p>Confort y tranquilidad frente al mar · Desde $1,200 / noche</p>
-          <a href="Reserva/Reser.html" class="btn-carousel">Reservar ahora</a>
+          <p>Confort y tranquilidad frente al mar · Desde <span data-tarifa="Sencilla">—</span> / noche</p>
+          <a href="../Huesped/Reserva/Reser.html" class="btn-carousel" data-rf="RF-12">Reservar ahora</a>
         </div>
       </div>
 
       <div class="carousel-slide" style="background-image: url('https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=1400&auto=format&fit=crop');">
         <div class="carousel-caption">
           <h2>Habitación Doble</h2>
-          <p>Espacio ideal para familias o parejas · Desde $1,650 / noche</p>
-          <a href="Reserva/Reser.html" class="btn-carousel">Reservar ahora</a>
-        </div>
-      </div>
-
-      <div class="carousel-slide" style="background-image: url('https://images.unsplash.com/photo-1566665797739-1674de7a421a?q=80&w=1400&auto=format&fit=crop');">
-        <div class="carousel-caption">
-          <h2>Suite Costa Azul</h2>
-          <p>Vista panorámica y exclusividad total · Desde $2,800 / noche</p>
-          <a href="Reserva/Reser.html" class="btn-carousel">Reservar ahora</a>
+          <p>Espacio ideal para familias o parejas · Desde <span data-tarifa="Doble">—</span> / noche</p>
+          <a href="../Huesped/Reserva/Reser.html" class="btn-carousel" data-rf="RF-12">Reservar ahora</a>
         </div>
       </div>
 
@@ -77,9 +71,9 @@
         <img src="https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=600&auto=format&fit=crop" alt="Habitación Sencilla">
         <div class="room-home-info">
           <h3>Habitación Sencilla</h3>
-          <p class="room-price">$1,200 <span>/ noche</span></p>
+          <p class="room-price"><b data-tarifa="Sencilla">—</b> <span>/ noche</span></p>
           <p class="room-desc">Cama king size, aire acondicionado, Wi-Fi de alta velocidad, baño privado y televisión por cable.</p>
-          <a href="Reserva/Reser.html" class="btn-home-card">Elegir habitación</a>
+          <a href="../Huesped/Reserva/Reser.html" class="btn-home-card" data-rf="RF-12">Elegir habitación</a>
         </div>
       </div>
 
@@ -87,43 +81,10 @@
         <img src="https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=600&auto=format&fit=crop" alt="Habitación Doble">
         <div class="room-home-info">
           <h3>Habitación Doble</h3>
-          <p class="room-price">$1,650 <span>/ noche</span></p>
+          <p class="room-price"><b data-tarifa="Doble">—</b> <span>/ noche</span></p>
           <p class="room-desc">Dos camas matrimoniales, balcón con vista al jardín, cafetera, minibar y amenidades de cortesía.</p>
-          <a href="Reserva/Reser.html" class="btn-home-card">Elegir habitación</a>
+          <a href="../Huesped/Reserva/Reser.html" class="btn-home-card" data-rf="RF-12">Elegir habitación</a>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Sección de Promociones -->
-  <section id="promociones" class="promo-section">
-    <div class="promo-box">
-      <div class="promo-icon"><i class="fa-solid fa-tag"></i></div>
-      <div class="promo-text">
-        <h2>Promoción de Temporada: ¡Escapada de Fin de Semana!</h2>
-        <p>Reserva de viernes a domingo en fechas seleccionadas de noviembre y obtén un <strong>15% de descuento</strong> en tu estancia aplicando el código de anticipo.</p>
-      </div>
-      <a href="Reserva/Reser.html" class="btn-promo">Aprovechar oferta</a>
-    </div>
-  </section>
-
-  <!-- Sección de Reseñas -->
-  <section id="resenas" class="content-section bg-light">
-    <div class="section-title">
-      <h2>Lo que dicen nuestros huéspedes</h2>
-      <p>Experiencias reales en Hotel Costa Azul</p>
-    </div>
-
-    <div class="reviews-grid">
-      <div class="review-card">
-        <div class="stars"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i></div>
-        <p>"Un lugar excepcional para descansar. Las instalaciones están impecables y la atención en recepción es sumamente amable. Definitivamente volveré."</p>
-        <span class="reviewer">— Ana López Torres</span>
-      </div>
-      <div class="review-card">
-        <div class="stars"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i></div>
-        <p>"Excelente ubicación y habitaciones muy cómodas. El proceso de reservación en línea fue rapidísimo. 100% recomendado."</p>
-        <span class="reviewer">— Luis Ortega</span>
       </div>
     </div>
   </section>
@@ -154,17 +115,16 @@
         <button class="btn-policies" onclick="openPolicyModal()">Políticas del Hotel</button>
       </div>
 
-      <!-- Columna 3: Accesos a Roles del Sistema -->
+      <!-- Columna 3: Huéspedes (sin cuenta) y acceso del personal (con credenciales) -->
       <div class="footer-col">
-        <h3>Acceso al Sistema</h3>
-        <p class="system-access-text">¿Eres parte del personal o huésped?</p>
+        <h3>Mi reservación</h3>
+        <p class="system-access-text">Los huéspedes no necesitan cuenta: usan su número de confirmación.</p>
         <div class="system-links">
-          <a href="Login_regis/index.html">Portal Huésped</a>
-          <a href="Recepcion/recep.html">Recepción</a>
-          <a href="Habitaciones/hab.html">Habitaciones</a>
-          <a href="Pagos/pagos.html">Módulo Pagos</a>
-          <a href="Camarista/Cama.html">Camarista</a>
+          <a href="../Huesped/Reserva/Reser.html">Reservar en línea</a>
+          <a href="../Huesped/Pagar/pagar.html">Pagar mi reservación</a>
+          <a href="../Huesped/Cancelar/Cance.html">Cancelar mi reservación</a>
         </div>
+        <a href="../Login/login.html" class="btn-staff-access"><i class="fa-solid fa-lock"></i> Acceso del personal</a>
       </div>
 
     </div>
@@ -177,14 +137,13 @@
   <div id="policyModal" class="modal-overlay" style="display: none;">
     <div class="modal-content">
       <h2>Políticas del Hotel</h2>
-      <p>1. Las reservaciones requieren un anticipo mínimo del 30% para garantizar la estancia.</p>
-      <p>2. Las cancelaciones sin penalización deben realizarse con al menos 48 horas de anticipación a la fecha de entrada.</p>
-      <p>3. El horario de entrada (Check-in) es a partir de las 15:00 hrs y la salida (Check-out) es a las 12:00 hrs.</p>
+      <p id="policyText">—</p>
       <button class="modal-close-btn" onclick="closePolicyModal()">Entendido</button>
     </div>
   </div>
 
   <!-- Script del Carrusel e Interacciones -->
+  <script src="../js/datos.js"></script>
   <script src="index.js"></script>
 </body>
 </html>

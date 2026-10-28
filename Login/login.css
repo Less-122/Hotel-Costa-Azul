@@ -195,3 +195,14 @@ body {
     margin-bottom: 30px;
   }
 }
+/* Mensaje de error de credenciales (I-01) */
+.login-error {
+  background-color: #fdeaea;
+  border: 1px solid #f0b4b4;
+  color: #9b2c2c;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+.login-error[hidden] { display: none; }

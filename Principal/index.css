@@ -269,100 +269,6 @@ body {
   background-color: #18355a;
 }
 
-/* Sección Promociones */
-.promo-section {
-  max-width: 1100px;
-  margin: 0 auto 40px auto;
-  padding: 0 20px;
-}
-
-.promo-box {
-  background-color: #faebd7;
-  border: 1px solid #e6d2b5;
-  border-radius: 12px;
-  padding: 30px 40px;
-  display: flex;
-  align-items: center;
-  gap: 25px;
-}
-
-.promo-icon {
-  font-size: 2.2rem;
-  color: #bfa15f;
-  background-color: #ffffff;
-  width: 65px;
-  height: 65px;
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-shrink: 0;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.03);
-}
-
-.promo-text {
-  flex: 1;
-}
-
-.promo-text h2 {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.4rem;
-  color: #111d2e;
-  margin-bottom: 6px;
-}
-
-.promo-text p {
-  font-size: 0.88rem;
-  color: #555048;
-}
-
-.btn-promo {
-  padding: 12px 22px;
-  background-color: #0f2540;
-  color: #ffffff;
-  border-radius: 8px;
-  text-decoration: none;
-  font-size: 0.9rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-/* Sección Reseñas */
-.reviews-grid {
-  max-width: 1100px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 25px;
-}
-
-.review-card {
-  background-color: #ffffff;
-  border: 1px solid #e2dac9;
-  border-radius: 12px;
-  padding: 25px;
-}
-
-.stars {
-  color: #d99b26;
-  font-size: 0.85rem;
-  margin-bottom: 12px;
-}
-
-.review-card p {
-  font-size: 0.88rem;
-  color: #555048;
-  font-style: italic;
-  line-height: 1.5;
-  margin-bottom: 15px;
-}
-
-.reviewer {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: #111d2e;
-}
-
 /* Pie de Página */
 .footer-section {
   background-color: #0f2540;
@@ -472,6 +378,23 @@ body {
   text-decoration: underline;
 }
 
+.btn-staff-access {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 9px 16px;
+  border: 1px solid #a8b2c1;
+  border-radius: 8px;
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.btn-staff-access:hover {
+  background-color: #ffffff;
+  color: #0f2540;
+}
+
 .footer-bottom {
   text-align: center;
   border-top: 1px solid #1d3557;
@@ -537,6 +460,5 @@ body {
 @media (max-width: 768px) {
   .navbar { padding: 15px 20px; flex-direction: column; gap: 12px; }
   .nav-links { gap: 15px; }
-  .promo-box { flex-direction: column; text-align: center; }
   .carousel-caption h2 { font-size: 2rem; }
 }

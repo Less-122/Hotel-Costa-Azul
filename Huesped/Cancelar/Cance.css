@@ -621,3 +621,23 @@ body {
 .btn-yes:hover {
   background-color: #8c2828;
 }
+/* ===== Estados añadidos al conectar la lógica ===== */
+.field-error {
+  background-color: #fdeaea;
+  border: 1px solid #f0b4b4;
+  color: #9b2c2c;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  margin: 0 0 15px 0;
+}
+.field-error[hidden], .reservation-box[hidden] { display: none; }
+.btn-init-cancel:disabled { background-color: #a8a29e; cursor: not-allowed; }
+.success-note {
+  background-color: #e2edd8;
+  color: #35522b;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  margin: 0 0 15px 0;
+}

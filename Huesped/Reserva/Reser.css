@@ -666,3 +666,37 @@ body {
 .btn-ready-action:hover {
   background-color: #18355a;
 }
+/* ===== Estados añadidos al conectar la lógica ===== */
+.field-error {
+  background-color: #fdeaea;
+  border: 1px solid #f0b4b4;
+  color: #9b2c2c;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  margin: 0 0 12px 0;
+}
+.field-error[hidden] { display: none; }
+
+.no-rooms {
+  background-color: #fdf3dc;
+  border: 1px solid #ecd49a;
+  color: #7a5a10;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.9rem;
+}
+.no-rooms[hidden] { display: none; }
+
+.badge.unavailable {
+  background-color: #eadfdf;
+  color: #8a3a3a;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+.room-card.disabled { opacity: 0.55; cursor: not-allowed; }
+.room-card.disabled .btn-select-room { cursor: not-allowed; }

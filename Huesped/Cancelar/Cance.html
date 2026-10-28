@@ -20,10 +20,10 @@
 
   <!-- Navbar Superior -->
   <header class="navbar">
-    <div class="nav-brand">Hotel Costa Azul</div>
+    <a class="nav-brand" href="../../Principal/index.html" style="text-decoration:none;color:inherit">Hotel Costa Azul</a>
     <nav class="nav-links">
       <a href="../Reserva/Reser.html">Reservar</a>
-      <a href="#">Pagar</a>
+      <a href="../Pagar/pagar.html">Pagar</a>
       <a href="Cance.html" class="active">Cancelar reservación</a>
     </nav>
   </header>
@@ -42,50 +42,52 @@
           <label for="confCode">Número de confirmación</label>
           <div class="input-field">
             <i class="fa-regular fa-ticket icon-left"></i>
-            <input type="text" id="confCode" value="AX7B9" placeholder="Ej. AX7B9" required>
+            <input type="text" id="confCode" placeholder="Ej. AX7B9" maxlength="5" autocomplete="off" required>
           </div>
         </div>
 
-        <button type="submit" class="btn-search">
+        <button type="submit" class="btn-search" data-rf="RF-13">
           <i class="fa-solid fa-magnifying-glass"></i> Buscar
         </button>
       </form>
 
-      <!-- Detalle de la Reservación (Inicialmente Activa) -->
-      <div id="reservationResult" class="reservation-box">
-        
+      <p class="field-error" id="searchError" role="alert" hidden>No encontramos una reservación con ese código.</p>
+
+      <!-- Detalle de la Reservación (aparece al encontrarla) -->
+      <div id="reservationResult" class="reservation-box" hidden>
+
         <div class="res-header">
-          <h2>Reservación <span id="displayCode">AX7B9</span></h2>
+          <h2>Reservación <span id="displayCode">—</span></h2>
           <span id="statusBadge" class="badge-active">Activa</span>
         </div>
 
         <div class="res-details">
           <div class="detail-row">
             <span class="label">Huésped</span>
-            <span class="value">María López Pérez</span>
+            <span class="value" id="resGuest">—</span>
           </div>
           <div class="detail-row">
             <span class="label">Fechas</span>
-            <span class="value">12 al 15 de noviembre de 2026</span>
+            <span class="value" id="resDates">—</span>
           </div>
           <div class="detail-row">
             <span class="label">Habitación</span>
-            <span class="value">204 · Sencilla</span>
+            <span class="value" id="resRoom">—</span>
           </div>
           <div class="detail-row">
             <span class="label">Total</span>
-            <span class="value">$2,550.00</span>
+            <span class="value" id="resTotal">—</span>
           </div>
         </div>
 
       </div>
 
-      <p class="policy-text">Revisa la política de cancelación vigente antes de continuar.</p>
+      <p class="policy-text" id="policyText">Escribe tu código para ver la política de cancelación de tu reservación.</p>
 
       <!-- Botones Inferiores -->
       <div class="bottom-actions">
-        <a href="../Login_regis/index.html" class="btn-back">← Volver</a>
-        <button id="openModalBtn" class="btn-init-cancel">Cancelar reservación</button>
+        <a href="../../Principal/index.html" class="btn-back">← Volver</a>
+        <button id="openModalBtn" class="btn-init-cancel" data-rf="RF-13, RF-09" disabled>Cancelar reservación</button>
       </div>
 
     </div>
@@ -109,6 +111,7 @@
   </div>
 
   <!-- Script -->
-  <script src="Canse.js"></script>
+  <script src="../../js/datos.js"></script>
+  <script src="Cance.js"></script>
 </body>
 </html>

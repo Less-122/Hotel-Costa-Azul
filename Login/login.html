@@ -58,14 +58,17 @@
           </div>
         </div>
 
+        <!-- Mensaje de credenciales inválidas (RNF-09) -->
+        <p id="loginError" class="login-error" role="alert" hidden><i class="fa-solid fa-triangle-exclamation"></i> Revisa usuario o contraseña.</p>
+
         <!-- Botón Iniciar Sesión -->
-        <button type="submit" class="btn-submit">Iniciar sesión</button>
+        <button type="submit" class="btn-submit" data-rf="RNF-09">Iniciar sesión</button>
 
       </form>
 
-      <!-- Pie del Formulario -->
+      <!-- Pie del Formulario: el huésped no necesita cuenta -->
       <div class="form-footer">
-        ¿Eres personal nuevo? <a href="#">Crear cuenta</a>
+        ¿Eres huésped? <a href="../Huesped/Reserva/Reser.html">Reserva sin cuenta</a> · <a href="../Principal/index.html">Volver al inicio</a>
       </div>
 
     </div>
@@ -73,6 +76,7 @@
   </div>
 
   <!-- 2. CONEXIÓN CON EL ARCHIVO JAVASCRIPT -->
+  <script src="../js/datos.js"></script>
   <script src="./login.js"></script>
 </body>
 </html>

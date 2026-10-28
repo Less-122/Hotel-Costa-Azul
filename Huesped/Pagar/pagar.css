@@ -363,3 +363,26 @@ body {
   align-items: center;
   gap: 8px;
 }
+/* ===== Estados añadidos al conectar la lógica ===== */
+.field-error {
+  background-color: #fdeaea;
+  border: 1px solid #f0b4b4;
+  color: #9b2c2c;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  margin: 0 0 15px 0;
+}
+.field-error[hidden], .reservation-summary-card[hidden] { display: none; }
+.success-alert-box {
+  background-color: #e2edd8;
+  border: 1px solid #b9d3a5;
+  color: #35522b;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin-bottom: 15px;
+}
+.btn-pay-submit:disabled { background-color: #a8a29e; cursor: not-allowed; }
+.input-field input[readonly] { background-color: #efeae0; }

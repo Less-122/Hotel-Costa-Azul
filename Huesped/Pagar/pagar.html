@@ -20,7 +20,7 @@
 
   <!-- Navbar Superior -->
   <header class="navbar">
-    <div class="nav-brand">Hotel Costa Azul</div>
+    <a class="nav-brand" href="../../Principal/index.html" style="text-decoration:none;color:inherit">Hotel Costa Azul</a>
     <nav class="nav-links">
       <a href="../Reserva/Reser.html">Reservar</a>
       <a href="pagar.html" class="active">Pagar</a>
@@ -42,28 +42,30 @@
           <label for="reservationCode">Código de reservación</label>
           <div class="input-field">
             <i class="fa-regular fa-ticket"></i>
-            <input type="text" id="reservationCode" value="AX7B9" placeholder="Ej. AX7B9" required>
+            <input type="text" id="reservationCode" placeholder="Ej. AX7B9" maxlength="5" autocomplete="off" required>
           </div>
         </div>
-        <button type="submit" class="btn-search">
+        <button type="submit" class="btn-search" data-rf="RF-11">
           <i class="fa-solid fa-magnifying-glass"></i> Buscar
         </button>
       </form>
 
-      <!-- Tarjeta de Información de la Reserva -->
-      <div class="reservation-summary-card">
-        <div class="res-guest-name">Ana López Torres</div>
-        <div class="res-info-details">12 → 14 nov 2026 · Sencilla</div>
-        
+      <p class="field-error" id="searchError" role="alert" hidden>No encontramos una reservación con ese código.</p>
+
+      <!-- Tarjeta de Información de la Reserva (total, pagado y saldo CALCULADOS) -->
+      <div class="reservation-summary-card" id="summaryCard" hidden>
+        <div class="res-guest-name" id="resGuest">—</div>
+        <div class="res-info-details" id="resInfo">—</div>
+
         <div class="res-financials">
-          <span class="fin-item">Total <b>$2,400</b></span>
+          <span class="fin-item">Total <b id="resTotal">$0</b></span>
           <span class="fin-dot">·</span>
-          <span class="fin-item">Pagado <b>$1,000</b></span>
+          <span class="fin-item">Pagado <b id="resPaid">$0</b></span>
         </div>
 
         <div class="balance-row">
           <span class="balance-label">Saldo pendiente</span>
-          <span class="balance-amount" id="displayPendingBalance">$1,400</span>
+          <span class="balance-amount" id="displayPendingBalance">$0</span>
         </div>
       </div>
 
@@ -81,7 +83,7 @@
         <label for="amountInput">Monto a pagar</label>
         <div class="input-field">
           <i class="fa-regular fa-credit-card"></i>
-          <input type="text" id="amountInput" value="$500.00" required>
+          <input type="text" id="amountInput" inputmode="decimal" placeholder="0.00" autocomplete="off">
         </div>
       </div>
     </section>
@@ -91,13 +93,13 @@
       <div class="card-box">
         <h2>Datos de la tarjeta</h2>
 
-        <form id="paymentForm">
+        <form id="paymentForm" novalidate>
           
           <div class="input-group">
             <label for="cardName">Nombre en la tarjeta</label>
             <div class="input-field">
               <i class="fa-regular fa-user"></i>
-              <input type="text" id="cardName" value="Ana López Torres" required>
+              <input type="text" id="cardName" placeholder="Como aparece en la tarjeta" autocomplete="off">
             </div>
           </div>
 
@@ -105,7 +107,7 @@
             <label for="cardNumber">Número de tarjeta</label>
             <div class="input-field">
               <i class="fa-regular fa-credit-card"></i>
-              <input type="text" id="cardNumber" value="•••• •••• •••• 4242" required>
+              <input type="text" id="cardNumber" placeholder="0000 0000 0000 0000" inputmode="numeric" maxlength="19" autocomplete="off">
             </div>
           </div>
 
@@ -114,7 +116,7 @@
               <label for="cardExp">Vence</label>
               <div class="input-field">
                 <i class="fa-regular fa-calendar"></i>
-                <input type="text" id="cardExp" value="08 / 28" required>
+                <input type="text" id="cardExp" placeholder="MM / AA" maxlength="7" autocomplete="off">
               </div>
             </div>
 
@@ -122,7 +124,7 @@
               <label for="cardCvv">CVV</label>
               <div class="input-field">
                 <i class="fa-solid fa-lock"></i>
-                <input type="password" id="cardCvv" value="•••" maxlength="4" required>
+                <input type="password" id="cardCvv" placeholder="•••" maxlength="4" inputmode="numeric" autocomplete="off">
               </div>
             </div>
           </div>
@@ -130,33 +132,33 @@
           <!-- Total a pagar destacado -->
           <div class="total-to-pay-box">
             <span>Total a pagar</span>
-            <span class="total-pay-amount" id="summaryTotalPay">$500.00</span>
+            <span class="total-pay-amount" id="summaryTotalPay">$0.00</span>
           </div>
 
-          <!-- Botón Pagar -->
-          <button type="submit" class="btn-pay-submit">
-            <i class="fa-solid fa-lock"></i> Pagar <span id="btnPayAmountText">$500.00</span>
+          <!-- Mensajes: error (A1 pago rechazado) y éxito -->
+          <div id="paymentErrorAlert" class="error-alert-box" role="alert" style="display: none;">
+            <i class="fa-solid fa-triangle-exclamation"></i> <span id="paymentErrorText">No se pudo procesar el pago. Revisa los datos.</span>
+          </div>
+          <div id="paymentOkAlert" class="success-alert-box" role="status" style="display: none;">
+            <i class="fa-solid fa-circle-check"></i> <span id="paymentOkText">Pago registrado correctamente.</span>
+          </div>
+
+          <!-- Botón Pagar (RF-16 pago en línea · RF-10 registro del pago) -->
+          <button type="submit" class="btn-pay-submit" id="btnPay" data-rf="RF-16, RF-10" disabled>
+            <i class="fa-solid fa-lock"></i> Pagar <span id="btnPayAmountText">$0.00</span>
           </button>
 
           <p class="secure-note">Pago seguro procesado por la pasarela de pagos.</p>
 
-          <a href="../Reserva/Reser.html" class="back-link">← Volver</a>
+          <a href="../../Principal/index.html" class="back-link">← Volver</a>
 
         </form>
       </div>
     </aside>
 
   </main>
-<!-- Caja de Alerta de Error en el Pago (Aparece al fallar) -->
-          <div id="paymentErrorAlert" class="error-alert-box" style="display: none;">
-            <i class="fa-solid fa-triangle-exclamation"></i> No se pudo procesar el pago. Revisa los datos.
-          </div>
-
-          <!-- Botón Pagar -->
-          <button type="submit" class="btn-pay-submit">
-            <i class="fa-solid fa-lock"></i> Pagar <span id="btnPayAmountText">$500.00</span>
-          </button>
-  <!-- Script de pago -->
+<!-- Script de pago -->
+  <script src="../../js/datos.js"></script>
   <script src="pagar.js"></script>
 </body>
 </html>
