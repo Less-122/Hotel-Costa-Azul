@@ -107,11 +107,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
 }
 
 .form-row {
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
 
 .form-row .input-group {
@@ -120,7 +121,7 @@ body {
 
 label {
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 800;
   color: #2b2b2b;
 }
 
@@ -132,6 +133,7 @@ label {
 
 input, select {
   width: 100%;
+ 
   padding: 10px 12px;
   border: 1px solid #d4cebe;
   border-radius: 7px;
@@ -152,43 +154,6 @@ input:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(15, 37, 64, 0.1);
 }
 
-/* Select de Rol estilizado */
-select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  cursor: pointer;
-  padding-right: 30px;
-}
-
-.select-wrapper {
-  position: relative;
-}
-
-.select-wrapper::after {
-  content: "▼";
-  font-size: 0.6rem;
-  color: #1a293e;
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.icon-toggle-password {
-  position: absolute;
-  right: 12px;
-  color: #7a756c;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.form-help-text {
-  font-size: 0.72rem;
-  color: #7a756c;
-  margin-top: 1px;
-}
 
 /* Botón Crear Cuenta */
 .btn-submit {
