@@ -12,4 +12,4 @@ function verificarAcceso($rolPermitido) {
         exit();
     }
 }
-?>
+ ?>
