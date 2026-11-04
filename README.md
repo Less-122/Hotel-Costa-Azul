@@ -45,7 +45,7 @@ Paso 2: Configurar la Base de Datos
 
 3.	Crea una nueva base de datos (por ejemplo, hotel_costa_azul).
 
-4.	Selecciona la base de datos creada, ve a la pestaña Importar, sube el archivo de respaldo con extensión .sql incluido en el repositorio y haz clic en Continuar.
+4.	Selecciona la base de datos creada, ve a la pestaña Importar, sube el archivo con extensión .sql incluido en el repositorio y haz clic en Continuar.
 
 5.	Revisa el archivo de conexión a la base de datos dentro del código (por ejemplo, conexion.php o similar) para verificar que las credenciales coincidan con tu entorno local:
 

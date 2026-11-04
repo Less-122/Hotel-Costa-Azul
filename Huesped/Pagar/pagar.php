@@ -1,43 +1,48 @@
 <?php
+// HOTEL_COSTA/Huesped/Pagar/pagar.php
 session_start();
+require_once '../../config/conexion.php';
 
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../config/conexion.php';
+// Validar que el usuario haya iniciado sesión como Huésped
+if (!isset($_SESSION['id_usuario']) || $_SESSION['rol'] !== 'Huesped') {
+    header("Location: ../Login_regis/index.php?error=acceso_denegado");
+    exit();
+}
 
 $mensaje_exito = '';
 $mensaje_error = '';
 
-// Código de reservación buscado
-$codigo_buscado = trim($_REQUEST['codigo'] ?? 'AX7B9');
+// Código de reservación buscado (por defecto toma uno de prueba de tu SQL, ej. AX7B9)
+$codigo_buscado = trim($_GET['codigo'] ?? 'AX7B9');
 $reservacion = null;
 $total_pagado = 0;
 $saldo_pendiente = 0;
+$costo_total = 0;
+$noches = 1;
 
 // 1. Procesar el pago cuando se envía el formulario de la tarjeta
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'procesar_pago_linea') {
     $codigo_res = trim($_POST['codigo_reservacion'] ?? '');
     $tipo_pago = $_POST['tipo_pago'] ?? 'Anticipo';
     $monto = floatval($_POST['monto'] ?? 0);
-    $nombre_tarjeta = trim($_POST['cardName'] ?? '');
 
     if (!empty($codigo_res) && $monto > 0) {
         try {
-            // Buscamos la reservación
-            $stmt_res = $conexion->prepare("SELECT id_reservacion, total FROM reservaciones WHERE codigo = ? OR id_reservacion = ?");
+            // Buscar la reservación por número de confirmación o ID usando la tabla en singular
+            $stmt_res = $conexion->prepare("SELECT id_reservacion FROM reservacion WHERE numero_confirmacion = ? OR id_reservacion = ?");
             $stmt_res->execute([$codigo_res, $codigo_res]);
             $res_data = $stmt_res->fetch(PDO::FETCH_ASSOC);
 
             if ($res_data) {
                 $id_reservacion = $res_data['id_reservacion'];
 
-                // Insertamos el pago en la base de datos con canal 'En línea'
+                // Insertar el pago en la tabla PAGO respetando tu esquema exacto
                 $stmt_insert = $conexion->prepare("
-                    INSERT INTO pagos (id_reservacion, tipo_pago, monto, canal, registrado_por, fecha_pago) 
-                    VALUES (?, ?, ?, 'En línea', ?, NOW())
+                    INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista) 
+                    VALUES (?, NOW(), ?, 'Pasarela en línea', ?, NULL)
                 ");
                 
-                $registrado_por = $_SESSION['nombre'] ?? 'Huésped (web)';
-                if ($stmt_insert->execute([$id_reservacion, $tipo_pago, $monto, $registrado_por])) {
+                if ($stmt_insert->execute([$monto, $tipo_pago, $id_reservacion])) {
                     $mensaje_exito = "¡Pago procesado con éxito por $" . number_format($monto, 2) . "!";
                     $codigo_buscado = $codigo_res;
                 }
@@ -52,35 +57,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     }
 }
 
-// 2. Consultar datos de la reservación y sus pagos previos
+// 2. Consultar datos reales de la reservación, su tarifa y sus pagos previos
 try {
     $stmt_busqueda = $conexion->prepare("
-        SELECT r.*, u.nombre AS nombre_huesped, u.apellido AS apellido_huesped, h.tipo AS tipo_habitacion 
-        FROM reservaciones r 
-        LEFT JOIN usuarios u ON r.id_usuario = u.id_usuario 
-        LEFT JOIN habitaciones h ON r.id_habitacion = h.id_habitacion 
-        WHERE r.codigo = ? OR r.id_reservacion = ?
+        SELECT r.*, u.nombre AS nombre_huesped, h.tipo_habitacion, t.precio_noche 
+        FROM reservacion r 
+        LEFT JOIN usuario u ON r.id_huesped = u.id_usuario 
+        LEFT JOIN habitacion h ON r.numero_habitacion = h.numero_habitacion 
+        LEFT JOIN tarifa t ON r.id_tarifa = t.id_tarifa
+        WHERE r.numero_confirmacion = ? OR r.id_reservacion = ?
     ");
     $stmt_busqueda->execute([$codigo_buscado, $codigo_buscado]);
     $reservacion = $stmt_busqueda->fetch(PDO::FETCH_ASSOC);
 
     if ($reservacion) {
         $id_res = $reservacion['id_reservacion'];
-        $costo_total = floatval($reservacion['total'] ?? 2400.00);
+        
+        // Calcular total dinámicamente (noches × precio por noche de la tarifa histórica)
+        $noches = max(1, (strtotime($reservacion['fecha_salida']) - strtotime($reservacion['fecha_entrada'])) / (60 * 60 * 24));
+        $precio_noche = floatval($reservacion['precio_noche'] ?? 850.00);
+        $costo_total = $noches * $precio_noche;
 
-        // Consultar suma de pagos
-        $stmt_pagos = $conexion->prepare("SELECT SUM(monto) AS total_pagado FROM pagos WHERE id_reservacion = ?");
+        // Consultar suma de pagos previos asociados a esta reserva en la tabla pago
+        $stmt_pagos = $conexion->prepare("SELECT SUM(monto) AS total_pagado FROM pago WHERE id_reservacion = ?");
         $stmt_pagos->execute([$id_res]);
         $res_pagos = $stmt_pagos->fetch(PDO::FETCH_ASSOC);
         $total_pagado = floatval($res_pagos['total_pagado'] ?? 0);
 
+        // Saldo pendiente calculado
         $saldo_pendiente = max(0, $costo_total - $total_pagado);
     }
 } catch (PDOException $e) {
     $reservacion = null;
 }
 
-$nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . ' ' . ($reservacion['apellido_huesped'] ?? '')) : 'Ana López Torres';
+$nombre_cliente = $reservacion ? trim($reservacion['nombre_huesped']) : $_SESSION['nombre'];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -106,7 +117,7 @@ $nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . '
   <header class="navbar">
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
-      <a href="../vistas/huesped/catalogo.php">Reservar</a>
+      <a href="../Reserva/Reser.php">Reservar</a>
       <a href="pagar.php" class="active">Pagar</a>
       <a href="../Cancelar/Cance.php">Cancelar reservación</a>
     </nav>
@@ -121,10 +132,10 @@ $nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . '
       <p class="subtitle">Abona un anticipo o liquida tu saldo en línea.</p>
 
       <?php if (!empty($mensaje_exito)): ?>
-          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold;"><?php echo $mensaje_exito; ?></div>
+          <div class="alert alert-success" style="color: #3c763d; background: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo $mensaje_exito; ?></div>
       <?php endif; ?>
       <?php if (!empty($mensaje_error)): ?>
-          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold;"><?php echo $mensaje_error; ?></div>
+          <div class="alert alert-danger" style="color: #a94442; background: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo $mensaje_error; ?></div>
       <?php endif; ?>
 
       <!-- Código de reservación y buscador -->
@@ -146,11 +157,11 @@ $nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . '
         <div class="reservation-summary-card">
           <div class="res-guest-name"><?php echo htmlspecialchars($nombre_cliente); ?></div>
           <div class="res-info-details">
-              <?php echo date('d M', strtotime($reservacion['fecha_entrada'])); ?> → <?php echo date('d M Y', strtotime($reservacion['fecha_salida'])); ?> · <?php echo htmlspecialchars($reservacion['tipo_habitacion'] ?? 'Sencilla'); ?>
+              <?php echo date('d M', strtotime($reservacion['fecha_entrada'])); ?> → <?php echo date('d M Y', strtotime($reservacion['fecha_salida'])); ?> · Hab. <?php echo htmlspecialchars($reservacion['numero_habitacion']); ?> (<?php echo htmlspecialchars($reservacion['tipo_habitacion']); ?>)
           </div>
           
           <div class="res-financials">
-            <span class="fin-item">Total <b>$<?php echo number_format($reservacion['total'] ?? 2400, 2); ?></b></span>
+            <span class="fin-item">Total <b>$<?php echo number_format($costo_total, 2); ?></b></span>
             <span class="fin-dot">·</span>
             <span class="fin-item">Pagado <b>$<?php echo number_format($total_pagado, 2); ?></b></span>
           </div>
@@ -161,7 +172,7 @@ $nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . '
           </div>
         </div>
       <?php else: ?>
-        <p style="text-align: center; color: #666; padding: 15px;">No se encontró ninguna reservación con ese código.</p>
+        <p style="text-align: center; color: #666; padding: 15px;">No se encontró ninguna reservación con ese código. Verifica que sea correcto.</p>
       <?php endif; ?>
 
     </section>
@@ -210,7 +221,7 @@ $nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . '
             </div>
           </div>
 
-          <!-- Monto a pagar -->
+          <!-- Monto a abonar -->
           <div class="input-group" style="margin-top: 15px;">
             <label for="amountInput">Monto a abonar</label>
             <div class="input-field">
@@ -232,7 +243,7 @@ $nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . '
 
           <p class="secure-note">Pago seguro procesado por la pasarela de pagos.</p>
 
-          <a href="../vistas/huesped/catalogo.php" class="back-link">← Volver</a>
+          <a href="../Reserva/Reser.php" class="back-link">← Volver</a>
 
         </form>
       </div>
@@ -240,18 +251,20 @@ $nombre_cliente = $reservacion ? trim(($reservacion['nombre_huesped'] ?? '') . '
 
   </main>
 
-  <!-- Script opcional para cambiar tipo de pago dinámicamente -->
+  <!-- Script para actualizar montos dinámicamente -->
   <script>
     const amountInput = document.getElementById('amountInput');
     const summaryTotalPay = document.getElementById('summaryTotalPay');
     const btnPayAmountText = document.getElementById('btnPayAmountText');
 
-    amountInput.addEventListener('input', function() {
-      const val = parseFloat(this.value) || 0;
-      const formatted = '$' + val.toFixed(2);
-      summaryTotalPay.textContent = formatted;
-      btnPayAmountText.textContent = formatted;
-    });
+    if (amountInput) {
+      amountInput.addEventListener('input', function() {
+        const val = parseFloat(this.value) || 0;
+        const formatted = '$' + val.toFixed(2);
+        summaryTotalPay.textContent = formatted;
+        btnPayAmountText.textContent = formatted;
+      });
+    }
   </script>
 </body>
 </html>

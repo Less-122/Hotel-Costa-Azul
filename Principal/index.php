@@ -2,7 +2,7 @@
 session_start();
 
 // Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once 'config/conexion.php';
+require_once '../config/conexion.php';
 
 // Variables por defecto para tarifas
 $precio_sencilla = 1200;
@@ -82,7 +82,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
           <i class="fa-solid fa-right-from-bracket"></i> Salir
         </a>
       <?php else: ?>
-        <a href="Login_regis/login.php" class="btn-login"><i class="fa-regular fa-user"></i> Iniciar sesión</a>
+        <a href="..\Huesped\Login_regis\index.php" class="btn-login"><i class="fa-regular fa-user"></i>Iniciar sesión</a>
       <?php endif; ?>
     </div>
   </header>

@@ -1,15 +1,23 @@
 <?php
+// HOTEL_COSTA/Huesped/Cancelar/Cance.php
 session_start();
 
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../config/conexion.php';
+// Conexión corregida subiendo dos niveles hasta config/
+require_once '../../config/conexion.php';
+
+// Validar que el usuario haya iniciado sesión como Huésped
+if (!isset($_SESSION['id_usuario']) || $_SESSION['rol'] !== 'Huesped') {
+    header("Location: ../Login_regis/index.php?error=acceso_denegado");
+    exit();
+}
 
 $mensaje_exito = '';
 $mensaje_error = '';
 
-// Código buscado (por defecto o vía GET/POST)
+// Código buscado (por defecto 'AX7B9' de tu prueba SQL)
 $codigo_buscado = trim($_REQUEST['codigo'] ?? 'AX7B9');
 $reservacion = null;
+$costo_total = 0;
 
 // 1. Procesar la acción de cancelación si se confirma en el modal
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'ejecutar_cancelacion') {
@@ -17,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
     if (!empty($codigo_a_cancelar)) {
         try {
-            // Actualizamos el estado de la reservación a 'Cancelada'
-            $stmt_cancel = $conexion->prepare("UPDATE reservaciones SET estado = 'Cancelada' WHERE codigo = ? OR id_reservacion = ?");
+            // Actualizamos el estado de la reservación a 'Cancelada' usando la tabla en singular y numero_confirmacion
+            $stmt_cancel = $conexion->prepare("UPDATE reservacion SET estado = 'Cancelada' WHERE numero_confirmacion = ? OR id_reservacion = ?");
             if ($stmt_cancel->execute([$codigo_a_cancelar, $codigo_a_cancelar])) {
                 $mensaje_exito = "La reservación <strong>$codigo_a_cancelar</strong> ha sido cancelada exitosamente.";
                 $codigo_buscado = $codigo_a_cancelar;
@@ -29,17 +37,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     }
 }
 
-// 2. Buscar la reservación en la base de datos para mostrar sus detalles
+// 2. Buscar la reservación en la base de datos con las tablas y campos reales del modelo 3FN
 try {
     $stmt_busqueda = $conexion->prepare("
-        SELECT r.*, u.nombre AS nombre_huesped, u.apellido AS apellido_huesped, h.numero AS num_habitacion, h.tipo AS tipo_habitacion 
-        FROM reservaciones r 
-        LEFT JOIN usuarios u ON r.id_usuario = u.id_usuario 
-        LEFT JOIN habitaciones h ON r.id_habitacion = h.id_habitacion 
-        WHERE r.codigo = ? OR r.id_reservacion = ?
+        SELECT r.*, u.nombre AS nombre_huesped, h.tipo_habitacion, t.precio_noche 
+        FROM reservacion r 
+        LEFT JOIN usuario u ON r.id_huesped = u.id_usuario 
+        LEFT JOIN habitacion h ON r.numero_habitacion = h.numero_habitacion 
+        LEFT JOIN tarifa t ON r.id_tarifa = t.id_tarifa
+        WHERE r.numero_confirmacion = ? OR r.id_reservacion = ?
     ");
     $stmt_busqueda->execute([$codigo_buscado, $codigo_buscado]);
     $reservacion = $stmt_busqueda->fetch(PDO::FETCH_ASSOC);
+
+    if ($reservacion) {
+        // Calcular total de la estancia (noches × precio por noche)
+        $noches = max(1, (strtotime($reservacion['fecha_salida']) - strtotime($reservacion['fecha_entrada'])) / (60 * 60 * 24));
+        $precio_noche = floatval($reservacion['precio_noche'] ?? 850.00);
+        $costo_total = $noches * $precio_noche;
+    }
 } catch (PDOException $e) {
     $reservacion = null;
     $mensaje_error = "Error al consultar la base de datos.";
@@ -69,8 +85,8 @@ try {
   <header class="navbar">
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
-      <a href="../vistas/huesped/catalogo.php">Reservar</a>
-      <a href="../vistas/huesped/mis_reservas.php">Mis Reservas</a>
+      <a href="../Reserva/Reser.php">Reservar</a>
+      <a href="../Pagar/pagar.php">Pagar</a>
       <a href="Cance.php" class="active">Cancelar reservación</a>
     </nav>
   </header>
@@ -84,10 +100,10 @@ try {
       <p class="subtitle">Escribe tu número de confirmación para encontrar tu reserva.</p>
 
       <?php if (!empty($mensaje_exito)): ?>
-          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold; text-align: center;"><?php echo $mensaje_exito; ?></div>
+          <div class="alert alert-success" style="color: #3c763d; background: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500; text-align: center;"><?php echo $mensaje_exito; ?></div>
       <?php endif; ?>
       <?php if (!empty($mensaje_error)): ?>
-          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold; text-align: center;"><?php echo $mensaje_error; ?></div>
+          <div class="alert alert-danger" style="color: #a94442; background: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500; text-align: center;"><?php echo $mensaje_error; ?></div>
       <?php endif; ?>
 
       <!-- Formulario / Buscador -->
@@ -109,16 +125,15 @@ try {
         <?php 
           $estado_actual = $reservacion['estado'] ?? 'Activa';
           $badge_class = (strtolower($estado_actual) === 'cancelada') ? 'badge-cancelled' : 'badge-active';
-          $nombre_completo = trim(($reservacion['nombre_huesped'] ?? '') . ' ' . ($reservacion['apellido_huesped'] ?? '')) ?: ($reservacion['nombre_cliente'] ?? 'Huésped');
-          $num_hab = $reservacion['num_habitacion'] ?? '204';
+          $nombre_completo = trim($reservacion['nombre_huesped'] ?? $_SESSION['nombre']);
+          $num_hab = $reservacion['numero_habitacion'] ?? '101';
           $tipo_hab = $reservacion['tipo_habitacion'] ?? 'Sencilla';
-          $total_res = $reservacion['total'] ?? 2550.00;
         ?>
         <!-- Detalle de la Reservación -->
         <div id="reservationResult" class="reservation-box">
           
           <div class="res-header">
-            <h2>Reservación <span id="displayCode"><?php echo htmlspecialchars($reservacion['codigo']); ?></span></h2>
+            <h2>Reservación <span id="displayCode"><?php echo htmlspecialchars($reservacion['numero_confirmacion']); ?></span></h2>
             <span id="statusBadge" class="<?php echo $badge_class; ?>"><?php echo htmlspecialchars($estado_actual); ?></span>
           </div>
 
@@ -135,11 +150,11 @@ try {
             </div>
             <div class="detail-row">
               <span class="label">Habitación</span>
-              <span class="value"><?php echo htmlspecialchars($num_hab); ?> · <?php echo htmlspecialchars($tipo_hab); ?></span>
+              <span class="value">Hab. <?php echo htmlspecialchars($num_hab); ?> · <?php echo htmlspecialchars($tipo_hab); ?></span>
             </div>
             <div class="detail-row">
               <span class="label">Total</span>
-              <span class="value">$<?php echo number_format($total_res, 2); ?></span>
+              <span class="value">$<?php echo number_format($costo_total, 2); ?></span>
             </div>
           </div>
 
@@ -149,7 +164,7 @@ try {
 
         <!-- Botones Inferiores -->
         <div class="bottom-actions">
-          <a href="../index.php" class="btn-back">← Volver</a>
+          <a href="../Reserva/Reser.php" class="btn-back">← Volver</a>
           <?php if (strtolower($estado_actual) !== 'cancelada'): ?>
             <button type="button" id="openModalBtn" class="btn-init-cancel" onclick="abrirModalCancelacion()">Cancelar reservación</button>
           <?php else: ?>
