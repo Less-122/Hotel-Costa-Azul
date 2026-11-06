@@ -1,13 +1,8 @@
 <?php
-session_start();
-// Validación de seguridad por rol
-if (!isset($_SESSION['rol']) || ($_SESSION['rol'] !== 'admin' && $_SESSION['rol'] !== 'recepcion')) {
-    header("Location: ../auth/login.php");
-    exit();
-}
-
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../config/conexion.php';
+// Solo el Administrador gestiona tarifas, políticas y reportes.
+require_once '../../config/conexion.php';
+require_once '../../config/sesion.php';
+verificarAcceso('Admin');
 
 // Inicializamos variables para los KPIs y reportes
 $total_ingresos = 0;
@@ -24,28 +19,29 @@ $tipos_habitacion_ocupacion = [];
 
 try {
     // 1. Ingresos totales del periodo (ej. mes actual)
-    $stmt_ingresos = $conexion->query("SELECT SUM(monto) AS total FROM pagos WHERE MONTH(fecha_pago) = MONTH(CURRENT_DATE()) AND YEAR(fecha_pago) = YEAR(CURRENT_DATE())");
+    $stmt_ingresos = $conexion->query("SELECT SUM(monto) AS total FROM pago WHERE MONTH(fecha_hora) = MONTH(CURRENT_DATE()) AND YEAR(fecha_hora) = YEAR(CURRENT_DATE())");
     $res_ingresos = $stmt_ingresos->fetch(PDO::FETCH_ASSOC);
     $total_ingresos = $res_ingresos['total'] ?? 0;
 
     // 2. Conteo de Reservaciones Activas y Canceladas del mes
-    $stmt_res_activas = $conexion->query("SELECT COUNT(*) AS total FROM reservaciones WHERE estado = 'Activa' AND MONTH(created_at) = MONTH(CURRENT_DATE())");
+    $stmt_res_activas = $conexion->query("SELECT COUNT(*) AS total FROM reservacion WHERE estado = 'Activa' AND MONTH(fecha_registro) = MONTH(CURRENT_DATE()) AND YEAR(fecha_registro) = YEAR(CURRENT_DATE())");
     $reservas_activas = $stmt_res_activas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
-    $stmt_res_canceladas = $conexion->query("SELECT COUNT(*) AS total FROM reservaciones WHERE estado = 'Cancelada' AND MONTH(created_at) = MONTH(CURRENT_DATE())");
+    $stmt_res_canceladas = $conexion->query("SELECT COUNT(*) AS total FROM reservacion WHERE estado = 'Cancelada' AND MONTH(fecha_registro) = MONTH(CURRENT_DATE()) AND YEAR(fecha_registro) = YEAR(CURRENT_DATE())");
     $reservas_canceladas = $stmt_res_canceladas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
     // 3. Ocupación general de hoy
-    $stmt_total_hab = $conexion->query("SELECT COUNT(*) AS total FROM habitaciones");
+    $stmt_total_hab = $conexion->query("SELECT COUNT(*) AS total FROM habitacion");
     $total_hab = $stmt_total_hab->fetch(PDO::FETCH_ASSOC)['total'] ?? 1;
 
-    $stmt_hab_ocupadas = $conexion->query("SELECT COUNT(*) AS total FROM habitaciones WHERE estado = 'Ocupada'");
+    // La ocupación se calcula desde RESERVACION (no se guarda): reservaciones activas que cubren hoy.
+    $stmt_hab_ocupadas = $conexion->query("SELECT COUNT(DISTINCT numero_habitacion) AS total FROM reservacion WHERE estado = 'Activa' AND CURRENT_DATE() >= fecha_entrada AND CURRENT_DATE() < fecha_salida");
     $hab_ocupadas = $stmt_hab_ocupadas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
-    $porcentaje_ocupacion = round(($hab_ocupadas / $total_hab) * 100, 1);
+    $porcentaje_ocupacion = $total_hab > 0 ? round(($hab_ocupadas / $total_hab) * 100, 1) : 0;
 
     // 4. Ingresos por tipo de pago (Anticipo vs Liquidación)
-    $stmt_pagos_tipo = $conexion->query("SELECT tipo_pago, SUM(monto) AS total FROM pagos WHERE MONTH(fecha_pago) = MONTH(CURRENT_DATE()) GROUP BY tipo_pago");
+    $stmt_pagos_tipo = $conexion->query("SELECT tipo_pago, SUM(monto) AS total FROM pago WHERE MONTH(fecha_hora) = MONTH(CURRENT_DATE()) AND YEAR(fecha_hora) = YEAR(CURRENT_DATE()) GROUP BY tipo_pago");
     while ($row = $stmt_pagos_tipo->fetch(PDO::FETCH_ASSOC)) {
         if (strtolower($row['tipo_pago']) === 'anticipo') {
             $ingreso_anticipo = $row['total'];
@@ -55,27 +51,30 @@ try {
     }
 
     // 5. Ingresos por canal (En línea vs Terminal)
-    $stmt_pagos_canal = $conexion->query("SELECT canal, SUM(monto) AS total FROM pagos WHERE MONTH(fecha_pago) = MONTH(CURRENT_DATE()) GROUP BY canal");
+    $stmt_pagos_canal = $conexion->query("SELECT canal_pago AS canal, SUM(monto) AS total FROM pago WHERE MONTH(fecha_hora) = MONTH(CURRENT_DATE()) AND YEAR(fecha_hora) = YEAR(CURRENT_DATE()) GROUP BY canal_pago");
     while ($row = $stmt_pagos_canal->fetch(PDO::FETCH_ASSOC)) {
-        if (strtolower($row['canal']) === 'en linea' || strtolower($row['canal']) === 'en línea') {
+        if (stripos($row['canal'], 'pasarela') !== false) {
             $ingreso_en_linea = $row['total'];
-        } elseif (strtolower($row['canal']) === 'terminal' || strtolower($row['canal']) === 'recepcion') {
+        } elseif (stripos($row['canal'], 'terminal') !== false) {
             $ingreso_terminal = $row['total'];
         }
     }
 
     // 6. Ocupación por tipo de habitación (Sencilla, Doble, etc.)
     $stmt_tipos = $conexion->query("
-        SELECT tipo, 
-               SUM(CASE WHEN estado = 'Ocupada' THEN 1 ELSE 0 END) AS ocupadas, 
-               COUNT(*) AS total 
-        FROM habitaciones 
-        GROUP BY tipo
+        SELECT h.tipo_habitacion AS tipo,
+               COUNT(DISTINCT r.numero_habitacion) AS ocupadas,
+               COUNT(DISTINCT h.numero_habitacion) AS total
+        FROM habitacion h
+        LEFT JOIN reservacion r ON r.numero_habitacion = h.numero_habitacion
+             AND r.estado = 'Activa'
+             AND CURRENT_DATE() >= r.fecha_entrada AND CURRENT_DATE() < r.fecha_salida
+        GROUP BY h.tipo_habitacion
     ");
     $tipos_habitacion_ocupacion = $stmt_tipos->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    // Manejo básico de error si alguna tabla no existe o hay discrepancia en nombres
+    error_log('[Hotel Costa Azul] repo.php: ' . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>

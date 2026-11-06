@@ -1,13 +1,8 @@
 <?php
-session_start();
-// Validación de seguridad por rol (ej. solo administradores o recepción)
-if (!isset($_SESSION['rol']) || ($_SESSION['rol'] !== 'admin' && $_SESSION['rol'] !== 'recepcion')) {
-    header("Location: ../auth/login.php");
-    exit();
-}
-
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../config/conexion.php';
+// Solo el Administrador gestiona tarifas, políticas y reportes.
+require_once '../../config/conexion.php';
+require_once '../../config/sesion.php';
+verificarAcceso('Admin');
 
 $mensaje_exito = '';
 $mensaje_error = '';
@@ -20,16 +15,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     if (!empty($descripcion) && !empty($vigente_desde)) {
         try {
             // 1. Opcional: Marcar la política actual como terminada (histórica) poniendo una fecha "hasta"
-            $stmt_actualizar = $conexion->prepare("UPDATE politicas SET hasta = ? WHERE estado = 'Vigente'");
+            // Se cierra la vigencia de la anterior (no se borra ni se cambia su texto: las reservaciones
+            // ya hechas conservan su id_politica) y se inserta la nueva como vigente.
+            $conexion->beginTransaction();
+            $stmt_actualizar = $conexion->prepare("UPDATE politica_cancelacion SET vigente = 0, fecha_fin = DATE_SUB(?, INTERVAL 1 DAY) WHERE vigente = 1");
             $stmt_actualizar->execute([$vigente_desde]);
 
-            // 2. Insertar la nueva política como 'Vigente'
-            $stmt_insertar = $conexion->prepare("INSERT INTO politicas (descripcion, desde, hasta, estado) VALUES (?, ?, NULL, 'Vigente')");
-            if ($stmt_insertar->execute([$descripcion, $vigente_desde])) {
-                $mensaje_exito = "¡Nueva política guardada con éxito!";
-            }
+            $stmt_insertar = $conexion->prepare("INSERT INTO politica_cancelacion (descripcion, vigente, fecha_inicio, fecha_fin) VALUES (?, 1, ?, NULL)");
+            $stmt_insertar->execute([$descripcion, $vigente_desde]);
+            $conexion->commit();
+            $mensaje_exito = "¡Nueva política guardada con éxito!";
         } catch (PDOException $e) {
-            $mensaje_error = "Error al guardar en la base de datos: " . $e->getMessage();
+            if ($conexion->inTransaction()) { $conexion->rollBack(); }
+            error_log('[Hotel Costa Azul] poli.php: ' . $e->getMessage());
+            $mensaje_error = "No se pudo guardar la política. Intenta de nuevo.";
         }
     } else {
         $mensaje_error = "Por favor completa todos los campos del formulario.";
@@ -38,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
 // Consultar todas las políticas de la base de datos ordenadas por fecha
 try {
-    $stmt_politicas = $conexion->query("SELECT descripcion, desde, hasta, estado FROM politicas ORDER BY desde DESC");
+    $stmt_politicas = $conexion->query("SELECT descripcion, fecha_inicio AS desde, fecha_fin AS hasta, IF(vigente = 1, 'Vigente', 'Histórica') AS estado FROM politica_cancelacion ORDER BY fecha_inicio DESC, id_politica DESC");
     $lista_politicas = $stmt_politicas->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $lista_politicas = [];

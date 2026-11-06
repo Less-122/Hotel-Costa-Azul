@@ -1,4 +1,4 @@
-
+SET NAMES utf8mb4;
 DROP DATABASE IF EXISTS hotel_costa_azul;
 CREATE DATABASE hotel_costa_azul CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE hotel_costa_azul;
@@ -86,14 +86,15 @@ CREATE TABLE pago (
 ) ENGINE=InnoDB;
 
 -- Datos FICTICIOS de demostración.
+-- Contraseña de demostración de los 7 usuarios: 123 (en la BD solo se guarda el hash de password_hash)
 INSERT INTO usuario (nombre, contacto, correo, password, rol) VALUES
-('Admin Demo',         '5550000001', 'admin@costaazul.test',    '123', 'Admin'),
-('Recepcion Uno',      '5550000002', 'recep1@costaazul.test',   '123', 'Recepcionista'),
-('Recepcion Dos',      '5550000003', 'recep2@costaazul.test',   '123', 'Recepcionista'),
-('Camarista Demo',     '5550000004', 'camarista@costaazul.test','123', 'Camarista'),
-('Huesped Ficticio A', '5550000005', 'huesped.a@correo.test',   '123', 'Huesped'),
-('Huesped Ficticio B', '5550000006', 'huesped.b@correo.test',   '123', 'Huesped'),
-('Huesped Ficticio C', '5550000007', 'huesped.c@correo.test',   '123', 'Huesped');
+('Admin Demo',         '5550000001', 'admin@costaazul.test',    '$2y$10$XZfVmwbMCpJc5ioxX69N2.555ScRQZmKbxFjh.nTUUc1k1jbO1fje', 'Admin'),
+('Recepcion Uno',      '5550000002', 'recep1@costaazul.test',   '$2y$10$y6/wvXgRKHnj6Vpmvij1WOZIPG/kjO2qd97tGqINjibldn3p6NtwC', 'Recepcionista'),
+('Recepcion Dos',      '5550000003', 'recep2@costaazul.test',   '$2y$10$MTuPUVFiuMM0v6tyOWwbTOgORx7ay3jnC5p7pGCDCwI/OTTBsQFLS', 'Recepcionista'),
+('Camarista Demo',     '5550000004', 'camarista@costaazul.test','$2y$10$DEQHbJ2S.Y1alpRuwQExNOn9Cye4dIYJ085QB03J7TmWFoFdP3lpO', 'Camarista'),
+('Huesped Ficticio A', '5550000005', 'huesped.a@correo.test',   '$2y$10$XaBHDwoQEt2jnznfNbWcMuVvDWAZR5mrn3aNeK1P6g/YclBP7qdyK', 'Huesped'),
+('Huesped Ficticio B', '5550000006', 'huesped.b@correo.test',   '$2y$10$3qOkqx2vMffaOWYu1sgMgucn9eixMb3yaGLXmkhrM8vMoD3KAcM8e', 'Huesped'),
+('Huesped Ficticio C', '5550000007', 'huesped.c@correo.test',   '$2y$10$YTgRsKMEXXvo1BmjxJpSVeDz8s7/5Mf87kwEZtPVPxDFzl18AYZam', 'Huesped');
 
 INSERT INTO habitacion (numero_habitacion, tipo_habitacion, estado_limpieza, disponible) VALUES
 ('101','Sencilla','Limpia',1),

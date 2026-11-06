@@ -16,8 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
             $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            // Verificamos contraseña plana (o password_verify si usas hashes)
-            if ($usuario && ($password === $usuario['password'] || password_verify($password, $usuario['password']))) {
+            // Las contraseñas se guardan con password_hash(); aquí solo se verifica el hash.
+            if ($usuario && password_verify($password, $usuario['password'])) {
+                session_regenerate_id(true);
                 $_SESSION['id_usuario'] = $usuario['id_usuario'];
                 $_SESSION['nombre'] = $usuario['nombre'];
                 $_SESSION['rol'] = $usuario['rol'];
@@ -33,7 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos.";
             }
         } catch (PDOException $e) {
-            $errorMsg = "Error en el sistema: " . $e->getMessage();
+            error_log('[Hotel Costa Azul] Error en login: ' . $e->getMessage());
+            $errorMsg = "Ocurrió un error en el sistema. Intenta de nuevo.";
         }
     } else {
         $errorMsg = "Por favor, completa todos los campos.";
