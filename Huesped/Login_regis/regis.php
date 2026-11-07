@@ -1,13 +1,17 @@
 <?php
 session_start();
 
-// Si ya ha iniciado sesión, lo redirigimos
+// Si ya inició sesión, lo redirigimos según su rol
 if (isset($_SESSION['rol'])) {
-    header("Location: ../vistas/huesped/catalogo.php");
+    header('Location: ' . ($_SESSION['rol'] === 'Huesped'
+        ? '../Reserva/Reser.php'
+        : '../../Principal/index.php'));
     exit();
 }
 
-$error = $_GET['error'] ?? '';
+// Mensaje que deja el controlador (se muestra una sola vez)
+$error = $_SESSION['flash_error'] ?? '';
+unset($_SESSION['flash_error']);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -30,7 +34,7 @@ $error = $_GET['error'] ?? '';
 <body>
 
   <div class="register-container">
-    
+
     <!-- Lado Izquierdo: Imagen -->
     <div class="hero-section">
       <div class="hero-content">
@@ -41,7 +45,7 @@ $error = $_GET['error'] ?? '';
 
     <!-- Lado Derecho: Formulario -->
     <div class="form-section">
-      
+
       <div class="header-brand">
         <h2>Hotel Costa Azul</h2>
       </div>
@@ -51,17 +55,17 @@ $error = $_GET['error'] ?? '';
         <p>Registra tus datos para acceder al sistema.</p>
       </div>
 
-      <!-- Alertas de error -->
-      <?php if ($error === 'registro'): ?>
-        <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-size: 14px; font-weight: 500;">
-          No se pudo completar el registro. Es probable que el correo ya esté registrado.
+      <!-- Alertas de error (vienen del controlador) -->
+      <?php if (!empty($error)): ?>
+        <div class="alert alert-danger" style="color: #d9534f; background-color: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; font-weight: 500;">
+          <?php echo htmlspecialchars($error); ?>
         </div>
       <?php endif; ?>
 
       <!-- Formulario conectado al controlador -->
       <form id="registerForm" class="register-form" method="POST" action="../controladores/auth_controller.php" onsubmit="return validarContrasenas();">
-        
-        <!-- Campo Operación Oculto para el Controlador -->
+
+        <!-- Operación para el controlador -->
         <input type="hidden" name="operacion" value="registro">
 
         <!-- Nombre completo -->
@@ -70,7 +74,7 @@ $error = $_GET['error'] ?? '';
           <input type="text" id="fullname" name="nombre" placeholder="Ej. María López Pérez" required>
         </div>
 
-        <!-- Fila: Teléfono -->
+        <!-- Teléfono -->
         <div class="form-row">
           <div class="input-group" style="width: 100%;">
             <label for="phone">Teléfono (10 dígitos)</label>
@@ -84,7 +88,7 @@ $error = $_GET['error'] ?? '';
           <input type="email" id="email" name="correo" placeholder="correo@ejemplo.com" required>
         </div>
 
-        <!-- Fila: Contraseña + Confirmar contraseña -->
+        <!-- Contraseña + Confirmar contraseña -->
         <div class="form-row">
           <div class="input-group">
             <label for="password">Contraseña</label>
@@ -97,7 +101,8 @@ $error = $_GET['error'] ?? '';
           <div class="input-group">
             <label for="confirmPassword">Confirmar contraseña</label>
             <div class="input-wrapper">
-              <input type="password" id="confirmPassword" minlength="8" required>
+              <!-- Ahora lleva name para que el servidor también la valide -->
+              <input type="password" id="confirmPassword" name="confirmar_password" minlength="8" required>
               <i class="fa-regular fa-eye icon-toggle-password" id="toggleConfirmPassword"></i>
             </div>
           </div>
@@ -106,21 +111,19 @@ $error = $_GET['error'] ?? '';
         <p class="form-help-text" id="passwordError" style="color: red; display: none;">Las contraseñas no coinciden.</p>
         <p class="form-help-text">Mínimo 8 caracteres.</p>
 
-        <!-- Botón submit -->
         <button type="submit" class="btn-submit">Crear cuenta</button>
 
       </form>
 
-      <!-- Enlace para volver al login -->
+      <!-- Enlace para volver al login (ruta corregida) -->
       <div class="form-footer">
-        ¿Ya tienes cuenta? <a href="login.php">Iniciar sesión</a>
+        ¿Ya tienes cuenta? <a href="index.php">Iniciar sesión</a>
       </div>
 
     </div>
 
   </div>
 
-  <!-- Script de validación de contraseñas y visibilidad -->
   <script>
     function validarContrasenas() {
       const pass = document.getElementById('password').value;
@@ -135,14 +138,13 @@ $error = $_GET['error'] ?? '';
       return true;
     }
 
-    // Toggle para mostrar/ocultar contraseñas
-    document.getElementById('togglePassword').addEventListener('click', function() {
+    document.getElementById('togglePassword').addEventListener('click', function () {
       const p = document.getElementById('password');
       p.type = p.type === 'password' ? 'text' : 'password';
       this.classList.toggle('fa-eye-slash');
     });
 
-    document.getElementById('toggleConfirmPassword').addEventListener('click', function() {
+    document.getElementById('toggleConfirmPassword').addEventListener('click', function () {
       const p = document.getElementById('confirmPassword');
       p.type = p.type === 'password' ? 'text' : 'password';
       this.classList.toggle('fa-eye-slash');

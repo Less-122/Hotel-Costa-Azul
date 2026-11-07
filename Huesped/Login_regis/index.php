@@ -1,52 +1,18 @@
 <?php
-require_once '../../config/conexion.php';
 session_start();
 
-$errorMsg = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $correo = trim($_POST['correo'] ?? '');
-    $password = $_POST['password'] ?? '';
-
-    if (!empty($correo) && !empty($password)) {
-        try {
-            $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo";
-            $stmt = $conexion->prepare($sql);
-            $stmt->bindParam(':correo', $correo);
-            $stmt->execute();
-            $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            // Las contraseñas se guardan con password_hash(); aquí solo se verifica el hash.
-            if ($usuario && password_verify($password, $usuario['password'])) {
-                session_regenerate_id(true);
-                $_SESSION['id_usuario'] = $usuario['id_usuario'];
-                $_SESSION['nombre'] = $usuario['nombre'];
-                $_SESSION['rol'] = $usuario['rol'];
-
-                if ($usuario['rol'] === 'Huesped') {
-                    header("Location: ../Reserva/Reser.php");
-                    exit();
-                } else {
-                    header("Location: ../../Principal/index.php");
-                    exit();
-                }
-            } else {
-                $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos.";
-            }
-        } catch (PDOException $e) {
-            error_log('[Hotel Costa Azul] Error en login: ' . $e->getMessage());
-            $errorMsg = "Ocurrió un error en el sistema. Intenta de nuevo.";
-        }
-    } else {
-        $errorMsg = "Por favor, completa todos los campos.";
-    }
+// Si ya inició sesión, lo mandamos a su pantalla según el rol
+if (isset($_SESSION['rol'])) {
+    header('Location: ' . ($_SESSION['rol'] === 'Huesped'
+        ? '../Reserva/Reser.php'
+        : '../../Principal/index.php'));
+    exit();
 }
 
-if (isset($_GET['error'])) {
-    if ($_GET['error'] === 'credenciales') {
-        $errorMsg = "Correo o contraseña incorrectos. Por favor, intenta de nuevo.";
-    }
-}
+// Mensajes que deja el controlador (se muestran una sola vez)
+$errorMsg = $_SESSION['flash_error'] ?? '';
+$okMsg    = $_SESSION['flash_ok'] ?? '';
+unset($_SESSION['flash_error'], $_SESSION['flash_ok']);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -78,7 +44,15 @@ if (isset($_GET['error'])) {
         </div>
       <?php endif; ?>
 
-      <form id="loginForm" class="login-form" method="POST" action="">
+      <?php if (!empty($okMsg)): ?>
+        <div class="alert alert-success" style="color: #3c763d; background-color: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; font-weight: 500;">
+          <?php echo htmlspecialchars($okMsg); ?>
+        </div>
+      <?php endif; ?>
+
+      <form id="loginForm" class="login-form" method="POST" action="../controladores/auth_controller.php">
+        <input type="hidden" name="operacion" value="login">
+
         <div class="input-group">
           <label for="username">Correo electrónico / Usuario</label>
           <div class="input-wrapper">
@@ -97,7 +71,7 @@ if (isset($_GET['error'])) {
         <button type="submit" class="btn-submit">Iniciar sesión</button>
       </form>
       <div class="form-footer">
-        ¿Eres personal nuevo o huésped? <a href="registro.php">Crear cuenta</a>
+        ¿Eres huésped y aún no tienes cuenta? <a href="regis.php">Crear cuenta</a>
       </div>
     </div>
   </div>

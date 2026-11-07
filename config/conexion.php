@@ -38,7 +38,7 @@ function obtenerConexion(): PDO
     // Valores por defecto = XAMPP local (root, sin contraseña).
     $host   = getenv('DB_HOST') !== false ? getenv('DB_HOST') : '127.0.0.1';
     $puerto = getenv('DB_PORT') !== false ? getenv('DB_PORT') : '3306';
-    $bd     = getenv('DB_NAME') !== false ? getenv('DB_NAME') : 'hotel_costa_azul';
+    $bd     = getenv('DB_NAME') !== false ? getenv('DB_NAME') : 'esquemabd';
     $user   = getenv('DB_USER') !== false ? getenv('DB_USER') : 'root';
     $pass   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : '';
 
