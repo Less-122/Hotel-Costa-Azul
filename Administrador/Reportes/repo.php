@@ -1,81 +1,61 @@
 <?php
-// Solo el Administrador gestiona tarifas, políticas y reportes.
-require_once '../../config/conexion.php';
-require_once '../../config/sesion.php';
-verificarAcceso('Admin');
+session_start();
 
-// Inicializamos variables para los KPIs y reportes
-$total_ingresos = 0;
-$porcentaje_ocupacion = 0;
-$reservas_activas = 0;
-$reservas_canceladas = 0;
-
-$ingreso_anticipo = 0;
-$ingreso_liquidación = 0;
-$ingreso_en_linea = 0;
-$ingreso_terminal = 0;
-
-$tipos_habitacion_ocupacion = [];
-
-try {
-    // 1. Ingresos totales del periodo (ej. mes actual)
-    $stmt_ingresos = $conexion->query("SELECT SUM(monto) AS total FROM pago WHERE MONTH(fecha_hora) = MONTH(CURRENT_DATE()) AND YEAR(fecha_hora) = YEAR(CURRENT_DATE())");
-    $res_ingresos = $stmt_ingresos->fetch(PDO::FETCH_ASSOC);
-    $total_ingresos = $res_ingresos['total'] ?? 0;
-
-    // 2. Conteo de Reservaciones Activas y Canceladas del mes
-    $stmt_res_activas = $conexion->query("SELECT COUNT(*) AS total FROM reservacion WHERE estado = 'Activa' AND MONTH(fecha_registro) = MONTH(CURRENT_DATE()) AND YEAR(fecha_registro) = YEAR(CURRENT_DATE())");
-    $reservas_activas = $stmt_res_activas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
-
-    $stmt_res_canceladas = $conexion->query("SELECT COUNT(*) AS total FROM reservacion WHERE estado = 'Cancelada' AND MONTH(fecha_registro) = MONTH(CURRENT_DATE()) AND YEAR(fecha_registro) = YEAR(CURRENT_DATE())");
-    $reservas_canceladas = $stmt_res_canceladas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
-
-    // 3. Ocupación general de hoy
-    $stmt_total_hab = $conexion->query("SELECT COUNT(*) AS total FROM habitacion");
-    $total_hab = $stmt_total_hab->fetch(PDO::FETCH_ASSOC)['total'] ?? 1;
-
-    // La ocupación se calcula desde RESERVACION (no se guarda): reservaciones activas que cubren hoy.
-    $stmt_hab_ocupadas = $conexion->query("SELECT COUNT(DISTINCT numero_habitacion) AS total FROM reservacion WHERE estado = 'Activa' AND CURRENT_DATE() >= fecha_entrada AND CURRENT_DATE() < fecha_salida");
-    $hab_ocupadas = $stmt_hab_ocupadas->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
-
-    $porcentaje_ocupacion = $total_hab > 0 ? round(($hab_ocupadas / $total_hab) * 100, 1) : 0;
-
-    // 4. Ingresos por tipo de pago (Anticipo vs Liquidación)
-    $stmt_pagos_tipo = $conexion->query("SELECT tipo_pago, SUM(monto) AS total FROM pago WHERE MONTH(fecha_hora) = MONTH(CURRENT_DATE()) AND YEAR(fecha_hora) = YEAR(CURRENT_DATE()) GROUP BY tipo_pago");
-    while ($row = $stmt_pagos_tipo->fetch(PDO::FETCH_ASSOC)) {
-        if (strtolower($row['tipo_pago']) === 'anticipo') {
-            $ingreso_anticipo = $row['total'];
-        } elseif (strtolower($row['tipo_pago']) === 'liquidacion' || strtolower($row['tipo_pago']) === 'liquidación') {
-            $ingreso_liquidación = $row['total'];
-        }
-    }
-
-    // 5. Ingresos por canal (En línea vs Terminal)
-    $stmt_pagos_canal = $conexion->query("SELECT canal_pago AS canal, SUM(monto) AS total FROM pago WHERE MONTH(fecha_hora) = MONTH(CURRENT_DATE()) AND YEAR(fecha_hora) = YEAR(CURRENT_DATE()) GROUP BY canal_pago");
-    while ($row = $stmt_pagos_canal->fetch(PDO::FETCH_ASSOC)) {
-        if (stripos($row['canal'], 'pasarela') !== false) {
-            $ingreso_en_linea = $row['total'];
-        } elseif (stripos($row['canal'], 'terminal') !== false) {
-            $ingreso_terminal = $row['total'];
-        }
-    }
-
-    // 6. Ocupación por tipo de habitación (Sencilla, Doble, etc.)
-    $stmt_tipos = $conexion->query("
-        SELECT h.tipo_habitacion AS tipo,
-               COUNT(DISTINCT r.numero_habitacion) AS ocupadas,
-               COUNT(DISTINCT h.numero_habitacion) AS total
-        FROM habitacion h
-        LEFT JOIN reservacion r ON r.numero_habitacion = h.numero_habitacion
-             AND r.estado = 'Activa'
-             AND CURRENT_DATE() >= r.fecha_entrada AND CURRENT_DATE() < r.fecha_salida
-        GROUP BY h.tipo_habitacion
-    ");
-    $tipos_habitacion_ocupacion = $stmt_tipos->fetchAll(PDO::FETCH_ASSOC);
-
-} catch (PDOException $e) {
-    error_log('[Hotel Costa Azul] repo.php: ' . $e->getMessage());
+if (!isset($_SESSION['id_usuario']) || $_SESSION['rol'] !== 'admin') {
+    header("Location: /Hotel-Costa-Azul/personal_login/login_personal.php");
+    exit;
 }
+
+require_once '../../config/conexion.php';
+
+$meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+$mes_actual = $meses[date('n') - 1] . ' ' . date('Y');
+
+$inicio_mes = "DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')";
+$fin_mes    = "DATE_ADD($inicio_mes, INTERVAL 1 MONTH)";
+
+// 1. Pagos del mes: total, por tipo y por canal en una sola consulta
+$pagos = $conexion->query("
+    SELECT SUM(monto) AS total,
+           SUM(CASE WHEN tipo_pago = 'Anticipo'    THEN monto ELSE 0 END) AS anticipo,
+           SUM(CASE WHEN tipo_pago = 'Liquidación' THEN monto ELSE 0 END) AS liquidacion,
+           SUM(CASE WHEN canal_pago LIKE '%línea%' THEN monto ELSE 0 END) AS en_linea
+    FROM pago
+    WHERE fecha_hora >= $inicio_mes AND fecha_hora < $fin_mes
+")->fetch(PDO::FETCH_ASSOC);
+
+$total_ingresos       = (float) $pagos['total'];
+$ingreso_anticipo     = (float) $pagos['anticipo'];
+$ingreso_liquidacion  = (float) $pagos['liquidacion'];
+$ingreso_en_linea     = (float) $pagos['en_linea'];
+$ingreso_terminal     = $total_ingresos - $ingreso_en_linea;
+
+// 2. Reservaciones del mes por estado
+$reservas = $conexion->query("
+    SELECT estado, COUNT(*)
+    FROM reservacion
+    WHERE estado IN ('Activa', 'Cancelada')
+      AND fecha_registro >= $inicio_mes AND fecha_registro < $fin_mes
+    GROUP BY estado
+")->fetchAll(PDO::FETCH_KEY_PAIR);
+
+$reservas_activas    = $reservas['Activa'] ?? 0;
+$reservas_canceladas = $reservas['Cancelada'] ?? 0;
+
+// 3. Ocupación por tipo de habitación (de aquí sale también el total general)
+$tipos_habitacion_ocupacion = $conexion->query("
+    SELECT tipo_habitacion AS tipo,
+           SUM(disponible = 0) AS ocupadas,
+           COUNT(*) AS total
+    FROM habitacion
+    GROUP BY tipo_habitacion
+")->fetchAll(PDO::FETCH_ASSOC);
+
+$total_hab   = array_sum(array_column($tipos_habitacion_ocupacion, 'total'));
+$hab_ocupadas = array_sum(array_column($tipos_habitacion_ocupacion, 'ocupadas'));
+
+$pct = fn($parte, $todo) => $todo > 0 ? round($parte / $todo * 100, 1) : 0;
+$porcentaje_ocupacion = $pct($hab_ocupadas, $total_hab);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -94,8 +74,9 @@ try {
         <div class="logo">Hotel Costa Azul</div>
         <nav class="nav-links">
             <a href="repo.php" class="active">Reportes</a>
-            <a href="tari.php">Tarifas</a>
-            <a href="poli.php">Políticas</a>
+            <a href="../Tarifas/tari.php">Tarifas</a>
+            <a href="../Politicas/poli.php">Políticas</a>
+            <a href="../Usuarios/usuarios.php">Usuarios</a>
         </nav>
         <div class="user-profile">
             <span class="user-name"><?php echo htmlspecialchars($_SESSION['nombre'] ?? 'Usuario'); ?></span>
@@ -109,7 +90,7 @@ try {
         <!-- Panel Izquierdo: Gráficas y Métricas -->
         <main class="content-panel">
             <h1 class="page-title">Reportes</h1>
-            <p class="page-subtitle">Ingresos y ocupación calculados con las reservaciones y pagos registrados (Mes: <?php echo date('F Y'); ?>)</p>
+            <p class="page-subtitle">Ingresos y ocupación calculados con las reservaciones y pagos registrados (<?php echo $mes_actual; ?>)</p>
 
             <!-- Filtros de Período -->
             <div class="period-filters">
@@ -151,18 +132,13 @@ try {
                 <h3>Ocupación por tipo de habitación (hoy)</h3>
                 <div class="occupancy-list">
                     <?php if (count($tipos_habitacion_ocupacion) > 0): ?>
-                        <?php foreach ($tipos_habitacion_ocupacion as $tipo_hab): ?>
-                            <?php 
-                                $ocupadas = $tipo_hab['ocupadas'];
-                                $total_t = $tipo_hab['total'];
-                                $porcentaje = ($total_t > 0) ? round(($ocupadas / $total_t) * 100, 1) : 0;
-                            ?>
+                        <?php foreach ($tipos_habitacion_ocupacion as $t): ?>
                             <div class="occupancy-item">
-                                <span class="room-type"><?php echo htmlspecialchars($tipo_hab['tipo']); ?></span>
+                                <span class="room-type"><?php echo htmlspecialchars($t['tipo']); ?></span>
                                 <div class="progress-bar-bg">
-                                    <div class="progress-bar-fill" style="width: <?php echo $porcentaje; ?>%;"></div>
+                                    <div class="progress-bar-fill" style="width: <?php echo $pct($t['ocupadas'], $t['total']); ?>%;"></div>
                                 </div>
-                                <span class="room-count"><?php echo $ocupadas; ?> de <?php echo $total_t; ?></span>
+                                <span class="room-count"><?php echo $t['ocupadas']; ?> de <?php echo $t['total']; ?></span>
                             </div>
                         <?php endforeach; ?>
                     <?php else: ?>
@@ -175,7 +151,7 @@ try {
         <!-- Panel Derecho: Resumen Side Card -->
         <aside class="summary-panel">
             <h2>Resumen</h2>
-            <p class="summary-period">Periodo: este mes (<?php echo date('M Y'); ?>)</p>
+            <p class="summary-period">Periodo: este mes (<?php echo $mes_actual; ?>)</p>
 
             <!-- Ingresos por Tipo de Pago -->
             <div class="summary-group">
@@ -186,7 +162,7 @@ try {
                 </div>
                 <div class="summary-box">
                     <span>Liquidación</span>
-                    <strong>$<?php echo number_format($ingreso_liquidación, 2); ?></strong>
+                    <strong>$<?php echo number_format($ingreso_liquidacion, 2); ?></strong>
                 </div>
             </div>
 
