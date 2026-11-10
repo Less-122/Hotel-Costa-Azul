@@ -168,9 +168,7 @@ INSERT INTO `usuario` (`nombre`, `contacto`, `correo`, `password`, `rol`) VALUES
 
 --
 -- Índices para tablas volcadas
---
 
---
 -- Indices de la tabla `habitacion`
 --
 ALTER TABLE `habitacion`
