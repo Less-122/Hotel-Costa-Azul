@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . '/../config/sesion.php';
 
 // Conexión a la base de datos (ajusta la ruta según tu estructura)
 require_once '../config/conexion.php';
@@ -72,17 +72,15 @@ $rol_usuario = $_SESSION['rol'] ?? '';
           Hola, <?php echo htmlspecialchars($nombre_usuario); ?>
         </span>
         
-        <?php if ($rol_usuario === 'admin' || $rol_usuario === 'recepcion'): ?>
-          <a href="vistas/recepcion/dashboard.php" class="btn-login" style="margin-right: 10px;"><i class="fa-solid fa-hotel"></i> Panel</a>
-        <?php elseif ($rol_usuario === 'camarista'): ?>
-          <a href="vistas/camaristas/panel.php" class="btn-login" style="margin-right: 10px;"><i class="fa-solid fa-broom"></i> Panel</a>
+        <?php if (strtolower($rol_usuario) !== 'huesped'): ?>
+          <a href="<?php echo htmlspecialchars(paginaInicioRol(rolActual())); ?>" class="btn-login" style="margin-right: 10px;"><i class="fa-solid fa-hotel"></i> Panel</a>
         <?php endif; ?>
 
-        <a href="controladores/logout.php" class="btn-login" style="background-color: #e74c3c; border-color: #e74c3c; color: white;">
+        <a href="../config/logout.php" class="btn-login" style="background-color: #e74c3c; border-color: #e74c3c; color: white;">
           <i class="fa-solid fa-right-from-bracket"></i> Salir
         </a>
       <?php else: ?>
-        <a href="..\Huesped\Login_regis\index.php" class="btn-login"><i class="fa-regular fa-user"></i>Iniciar sesión</a>
+        <a href="../Huesped/Login_regis/login.php" class="btn-login"><i class="fa-regular fa-user"></i>Iniciar sesión</a>
       <?php endif; ?>
     </div>
   </header>
@@ -94,7 +92,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
         <div class="carousel-caption">
           <h2>Habitación Sencilla</h2>
           <p>Confort y tranquilidad frente al mar · Desde $<?php echo number_format($precio_sencilla, 2); ?> / noche</p>
-          <a href="Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
+          <a href="../Huesped/Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
         </div>
       </div>
 
@@ -102,7 +100,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
         <div class="carousel-caption">
           <h2>Habitación Doble</h2>
           <p>Espacio ideal para familias o parejas · Desde $<?php echo number_format($precio_doble, 2); ?> / noche</p>
-          <a href="Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
+          <a href="../Huesped/Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
         </div>
       </div>
 
@@ -110,7 +108,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
         <div class="carousel-caption">
           <h2>Suite Costa Azul</h2>
           <p>Vista panorámica y exclusividad total · Desde $<?php echo number_format($precio_suite, 2); ?> / noche</p>
-          <a href="Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
+          <a href="../Huesped/Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
         </div>
       </div>
 
@@ -134,7 +132,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
           <h3>Habitación Sencilla</h3>
           <p class="room-price">$<?php echo number_format($precio_sencilla, 2); ?> <span>/ noche</span></p>
           <p class="room-desc">Cama king size, aire acondicionado, Wi-Fi de alta velocidad, baño privado y televisión por cable.</p>
-          <a href="Reserva/Reser.php?tipo=Sencilla" class="btn-home-card">Elegir habitación</a>
+          <a href="../Huesped/Reserva/Reser.php?tipo=Sencilla" class="btn-home-card">Elegir habitación</a>
         </div>
       </div>
 
@@ -144,7 +142,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
           <h3>Habitación Doble</h3>
           <p class="room-price">$<?php echo number_format($precio_doble, 2); ?> <span>/ noche</span></p>
           <p class="room-desc">Dos camas matrimoniales, balcón con vista al jardín, cafetera, minibar y amenidades de cortesía.</p>
-          <a href="Reserva/Reser.php?tipo=Doble" class="btn-home-card">Elegir habitación</a>
+          <a href="../Huesped/Reserva/Reser.php?tipo=Doble" class="btn-home-card">Elegir habitación</a>
         </div>
       </div>
     </div>
@@ -158,7 +156,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
         <h2>Promoción de Temporada: ¡Escapada de Fin de Semana!</h2>
         <p>Reserva de viernes a domingo en fechas seleccionadas y obtén un <strong>15% de descuento</strong> en tu estancia aplicando el código de anticipo.</p>
       </div>
-      <a href="Reserva/Reser.php" class="btn-promo">Aprovechar oferta</a>
+      <a href="../Huesped/Reserva/Reser.php" class="btn-promo">Aprovechar oferta</a>
     </div>
   </section>
 
@@ -221,7 +219,7 @@ $rol_usuario = $_SESSION['rol'] ?? '';
       <h2>Políticas del Hotel</h2>
       <p>1. Las reservaciones requieren un anticipo mínimo del 30% para garantizar la estancia.</p>
       <p>2. <?php echo htmlspecialchars($politica_vigente_texto); ?></p>
-      <p>3. El horario de entrada (Check-in) es a partir de las 15:00 hrs y la salida (Check-out) es a las 12:00 hrs.</p>
+      <p>3. El horario de entrada es a partir de las 15:00 hrs y la salida es a las 12:00 hrs.</p>
       <button class="modal-close-btn" onclick="closePolicyModal()">Entendido</button>
     </div>
   </div>

@@ -1,0 +1,226 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Poppins:wght@300;400;500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #101820;
+}
+
+.login-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+}
+
+/* Sección Izquierda - Estilo Operativo/Corporativo */
+.hero-section {
+  flex: 1;
+  background: linear-gradient(to top, rgba(11, 19, 30, 0.9), rgba(11, 19, 30, 0.4)),
+              url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1200&auto=format&fit=crop') no-repeat center center/cover;
+  display: flex;
+  align-items: flex-end;
+  padding: 60px 50px;
+  border-right: 4px solid #c5a880;
+}
+
+.hero-content {
+  color: #ffffff;
+}
+
+.hero-content h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.8rem;
+  font-weight: 400;
+  margin-bottom: 8px;
+  color: #f4efe6;
+}
+
+.hero-content p {
+  font-size: 1.05rem;
+  font-weight: 300;
+  opacity: 0.85;
+  color: #d1c7b7;
+}
+
+/* Sección Derecha - Formulario */
+.form-section {
+  flex: 1;
+  background-color: #f9f8f6;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 10%;
+  position: relative;
+}
+
+.header-brand {
+  position: absolute;
+  top: 50px;
+  left: 10%;
+}
+
+.header-brand h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem;
+  color: #101820;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.header-brand span {
+  font-size: 0.85rem;
+  color: #8c783e;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.welcome-text {
+  margin-bottom: 30px;
+}
+
+.welcome-text h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.3rem;
+  color: #101820;
+  font-weight: 400;
+  margin-bottom: 8px;
+}
+
+.welcome-text p {
+  color: #6b665d;
+  font-size: 0.95rem;
+}
+
+/* Alerta de acceso denegado */
+.alert-error {
+  background-color: #f8d7da;
+  color: #842029;
+  border: 1px solid #f5c2c7;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #101820;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper input {
+  width: 100%;
+  padding: 14px 45px 14px 45px;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  background-color: #ffffff;
+  font-size: 0.95rem;
+  color: #2b2b2b;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-wrapper input:focus {
+  border-color: #101820;
+  box-shadow: 0 0 0 3px rgba(16, 24, 32, 0.1);
+}
+
+.icon-left {
+  position: absolute;
+  left: 16px;
+  color: #7a756c;
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+
+.icon-toggle-password {
+  position: absolute;
+  right: 16px;
+  color: #7a756c;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.icon-toggle-password:hover {
+  color: #101820;
+}
+
+.btn-submit {
+  margin-top: 10px;
+  padding: 15px;
+  background-color: #101820;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn-submit:hover {
+  background-color: #22303c;
+}
+
+.btn-submit:active {
+  transform: scale(0.99);
+}
+
+.form-footer {
+  margin-top: 25px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #7a756c;
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    display: none;
+  }
+  .form-section {
+    padding: 40px 25px;
+  }
+  .header-brand {
+    position: relative;
+    top: 0;
+    left: 0;
+    margin-bottom: 30px;
+  }
+}

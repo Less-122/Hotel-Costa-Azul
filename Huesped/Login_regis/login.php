@@ -1,6 +1,12 @@
 <?php
 require_once '../../config/conexion.php';
-session_start();
+require_once '../../config/sesion.php';
+
+// Si ya hay sesión iniciada, mandamos a cada quien a su página
+if (isset($_SESSION['id_usuario'])) {
+    header("Location: " . paginaInicioRol(rolActual()));
+    exit();
+}
 
 $errorMsg = '';
 
@@ -16,35 +22,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
             $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            // Verificamos contraseña plana (o password_verify si usas hashes)
-            if ($usuario && ($password === $usuario['password'] || password_verify($password, $usuario['password']))) {
-                $_SESSION['id_usuario'] = $usuario['id_usuario'];
-                $_SESSION['nombre'] = $usuario['nombre'];
-                $_SESSION['rol'] = $usuario['rol'];
-
-                if ($usuario['rol'] === 'Huesped') {
-                    header("Location: ../Reserva/Reser.php");
-                    exit();
+            // Solo se acepta el hash guardado en la BD (password_hash / password_verify)
+            if ($usuario && password_verify($password, $usuario['password'])) {
+                if (strtolower($usuario['rol']) !== 'huesped') {
+                    $errorMsg = "Esta cuenta es del personal del hotel. Ingresa por el portal de personal.";
                 } else {
-                    header("Location: ../../Principal/index.php");
+                    session_regenerate_id(true);
+                    $_SESSION['id_usuario'] = $usuario['id_usuario'];
+                    $_SESSION['nombre'] = $usuario['nombre'];
+                    $_SESSION['rol'] = 'Huesped';
+
+                    header("Location: ../Reserva/Reser.php");
                     exit();
                 }
             } else {
                 $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos.";
             }
         } catch (PDOException $e) {
-            $errorMsg = "Error en el sistema: " . $e->getMessage();
+            error_log('Login huésped: ' . $e->getMessage());
+            $errorMsg = "Error en el sistema. Inténtalo de nuevo.";
         }
     } else {
         $errorMsg = "Por favor, completa todos los campos.";
     }
 }
 
-if (isset($_GET['error'])) {
+if (isset($_GET['error']) && $errorMsg === '') {
     if ($_GET['error'] === 'credenciales') {
         $errorMsg = "Correo o contraseña incorrectos. Por favor, intenta de nuevo.";
+    } elseif ($_GET['error'] === 'acceso_denegado') {
+        $errorMsg = "Inicia sesión para continuar.";
     }
 }
+$registroOk = (($_GET['registro'] ?? '') === 'ok');
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -69,6 +79,12 @@ if (isset($_GET['error'])) {
         <h1>Bienvenido de nuevo</h1>
         <p>Ingresa con tu cuenta para continuar.</p>
       </div>
+
+      <?php if ($registroOk): ?>
+        <div class="alert alert-success" style="color: #3c763d; background-color: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; font-weight: 500;">
+          ¡Cuenta creada! Ya puedes iniciar sesión.
+        </div>
+      <?php endif; ?>
 
       <?php if (!empty($errorMsg)): ?>
         <div class="alert alert-danger" style="color: #d9534f; background-color: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; font-weight: 500;">
@@ -95,7 +111,7 @@ if (isset($_GET['error'])) {
         <button type="submit" class="btn-submit">Iniciar sesión</button>
       </form>
       <div class="form-footer">
-        ¿Eres personal nuevo o huésped? <a href="registro.php">Crear cuenta</a>
+        ¿Aún no tienes cuenta? <a href="regis.php">Crear cuenta</a>
       </div>
     </div>
   </div>

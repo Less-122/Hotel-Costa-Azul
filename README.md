@@ -43,14 +43,14 @@ No hay dependencias que instalar: no se usan frameworks ni Composer.
 
 ### Usuarios de demostración
 
-Todos con contraseña `123` (en la BD solo se guarda el hash generado con `password_hash`):
+## Estado de la entrega E1
 
-| Rol | Correo |
+| Rol | Correo |Contraseña
 |---|---|
-| Admin | admin@costaazul.test |
-| Recepcionista | recep1@costaazul.test, recep2@costaazul.test |
-| Camarista | camarista@costaazul.test |
-| Huésped | huesped.a@correo.test, huesped.b@correo.test, huesped.c@correo.test |
+| Admin | admin@costaazul.test |admin123
+| Recepcionista | recep1@costaazul.test, recep2@costaazul.test |recep123
+| Camarista | camarista@costaazul.test |camar123
+| Huésped | huesped.a@correo.test, huesped.b@correo.test, huesped.c@correo.test |123
 
 Los datos son ficticios; no incluyen datos personales reales.
 
@@ -77,12 +77,15 @@ Hotel-Costa-Azul/
 ├── .gitignore
 ├── index.php             Redirige a Principal/index.php
 └── README.md
-```
+
 
 ## Seguridad
 
 - Consultas preparadas con PDO (`ATTR_EMULATE_PREPARES` desactivado) contra inyección SQL.
 - Contraseñas guardadas con `password_hash` y verificadas con `password_verify`.
+- Contraseñas guardadas con `password_hash` y verificadas con `password_verify`. El hash se genera en el servidor en el momento del registro (`Huesped/Login_regis/regis.php`); a la BD nunca llega el texto original, y el login ya no acepta contraseñas en texto plano.
+- Acceso por rol centralizado en `config/sesion.php` (`verificarAcceso`): administrador, recepcionista y camarista solo entran a sus pantallas; un huésped que escribe la URL de una pantalla del personal es redirigido a su propia página (y al revés). La cuenta creada en *Crear cuenta* siempre es de rol Huésped.
+- Cierre de sesión en `config/logout.php`.
 - El archivo `.env` (configuración local) está en `.gitignore`; solo se versiona `.env.example`.
 - Los errores técnicos de conexión se escriben en el log del servidor; al usuario se le muestra un mensaje genérico.
 

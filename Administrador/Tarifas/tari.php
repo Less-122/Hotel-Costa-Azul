@@ -1,13 +1,8 @@
 <?php
-session_start();
-// Validación de seguridad por rol
-if (!isset($_SESSION['rol']) || ($_SESSION['rol'] !== 'admin' && $_SESSION['rol'] !== 'recepcion')) {
-    header("Location: ../auth/login.php");
-    exit();
-}
+require_once '../../config/sesion.php';
+verificarAcceso(['admin']);
 
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../config/conexion.php';
+require_once '../../config/conexion.php';
 
 $mensaje_exito = '';
 $mensaje_error = '';
@@ -20,12 +15,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
     if (!empty($tipo_habitacion) && !empty($precio) && !empty($vigente_desde)) {
         try {
-            // 1. Marcar la tarifa actual del mismo tipo como histórica (poniendo la fecha "hasta")
-            $stmt_actualizar = $conexion->prepare("UPDATE tarifas SET hasta = ? WHERE tipo = ? AND estado = 'Vigente'");
+            // 1. Marcar la tarifa actual del mismo tipo como histórica (vigente = 0)
+            $stmt_actualizar = $conexion->prepare("UPDATE tarifa SET vigente = 0, fecha_fin = ? WHERE tipo_habitacion = ? AND vigente = 1");
             $stmt_actualizar->execute([$vigente_desde, $tipo_habitacion]);
 
-            // 2. Insertar la nueva tarifa como 'Vigente'
-            $stmt_insertar = $conexion->prepare("INSERT INTO tarifas (tipo, precio, desde, hasta, estado) VALUES (?, ?, ?, NULL, 'Vigente')");
+            // 2. Insertar la nueva tarifa como vigente (vigente = 1)
+            $stmt_insertar = $conexion->prepare("INSERT INTO tarifa (tipo_habitacion, precio_noche, vigente, fecha_inicio, fecha_fin) VALUES (?, ?, 1, ?, NULL)");
             if ($stmt_insertar->execute([$tipo_habitacion, $precio, $vigente_desde])) {
                 $mensaje_exito = "¡Nueva tarifa guardada con éxito!";
             }
@@ -39,11 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
 // Consultar todas las tarifas ordenadas por fecha
 try {
-    $stmt_tarifas = $conexion->query("SELECT tipo, precio, desde, hasta, estado FROM tarifas ORDER BY desde DESC");
+    $stmt_tarifas = $conexion->query("SELECT tipo_habitacion AS tipo, precio_noche AS precio, fecha_inicio AS desde, fecha_fin AS hasta, 
+        CASE WHEN vigente = 1 THEN 'Vigente' ELSE 'Histórica' END AS estado 
+        FROM tarifa ORDER BY fecha_inicio DESC");
     $lista_tarifas = $stmt_tarifas->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $lista_tarifas = [];
-    $mensaje_error = "Error al cargar las tarifas.";
+    $mensaje_error = "Error al guardar la tarifa.";
 }
 ?>
 <!DOCTYPE html>
@@ -60,10 +56,11 @@ try {
     <header class="navbar">
         <div class="logo">Hotel Costa Azul</div>
         <nav class="nav-links">
-            <a href="repo.php">Reportes</a>
-            <a href="tari.php" class="active">Tarifas</a>
-            <a href="poli.php">Políticas</a>
-        </nav>
+    <a href="../Reportes/repo.php">Reportes</a>
+    <a href="tari.php" class="active">Tarifas</a>
+    <a href="../Politicas/poli.php">Políticas</a>
+    <a href="../Usuarios/usuarios.php">Usuarios</a>
+</nav>
         <div class="user-profile">
             <span class="user-name"><?php echo htmlspecialchars($_SESSION['nombre'] ?? 'Usuario'); ?></span>
             <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'] ?? 'Invitado')); ?></span>

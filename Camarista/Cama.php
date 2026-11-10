@@ -1,36 +1,57 @@
 <?php
-session_start();
+require_once '../config/sesion.php';
+verificarAcceso(['camarista', 'admin']);   // solo camarista (o admin)
 
-// Validación de seguridad por rol: Solo camaristas o administradores pueden acceder
-if (!isset($_SESSION['rol']) || ($_SESSION['rol'] !== 'camarista' && $_SESSION['rol'] !== 'admin')) {
-    header("Location: ../auth/login.php");
-    exit();
-}
+require_once '../config/conexion.php';
 
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../../config/conexion.php';
+$estados_validos = ['Limpia', 'Sucia', 'Mantenimiento'];
 
-// Si se recibe una petición asíncrona (AJAX) para actualizar el estado de la habitación
+// Petición asíncrona (AJAX) para cambiar el estado de limpieza de una habitación
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_habitacion']) && isset($_POST['nuevo_estado'])) {
-    $id_habitacion = $_POST['id_habitacion'];
-    $nuevo_estado = $_POST['nuevo_estado']; // 'Limpia', 'Sucia', 'Mantenimiento'
+    header('Content-Type: application/json; charset=utf-8');
+
+    $numero_habitacion = trim($_POST['id_habitacion']);
+    $nuevo_estado      = trim($_POST['nuevo_estado']);
+
+    if (!in_array($nuevo_estado, $estados_validos, true)) {
+        echo json_encode(['success' => false, 'error' => 'Estado no válido.']);
+        exit();
+    }
 
     try {
-        $stmt_update = $conexion->prepare("UPDATE habitaciones SET estado = ? WHERE id_habitacion = ? OR numero = ?");
-        $stmt_update->execute([$nuevo_estado, $id_habitacion, $id_habitacion]);
-        
-        echo json_encode(['success' => true, 'mensaje' => "Habitación actualizada correctamente"]);
+        $existe = $conexion->prepare("SELECT COUNT(*) FROM habitacion WHERE numero_habitacion = ?");
+        $existe->execute([$numero_habitacion]);
+        if ((int) $existe->fetchColumn() === 0) {
+            echo json_encode(['success' => false, 'error' => 'La habitación no existe.']);
+            exit();
+        }
+
+        // Una habitación en mantenimiento no se puede rentar: se marca como no disponible.
+        // Al volver a Limpia/Sucia, recepción decide cuándo vuelve a estar Libre.
+        if ($nuevo_estado === 'Mantenimiento') {
+            $stmt_update = $conexion->prepare("UPDATE habitacion SET estado_limpieza = ?, disponible = 0 WHERE numero_habitacion = ?");
+        } else {
+            $stmt_update = $conexion->prepare("UPDATE habitacion SET estado_limpieza = ? WHERE numero_habitacion = ?");
+        }
+        $stmt_update->execute([$nuevo_estado, $numero_habitacion]);
+
+        echo json_encode(['success' => true, 'mensaje' => 'Habitación actualizada correctamente']);
     } catch (PDOException $e) {
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        error_log('Camarista - actualizar habitación: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'error' => 'No se pudo actualizar la habitación.']);
     }
     exit();
 }
 
-// Consultar todas las habitaciones asignadas o registradas en el hotel
+// Consultar todas las habitaciones del hotel
 try {
-    $stmt_habs = $conexion->query("SELECT id_habitacion, numero, tipo, estado FROM habitaciones ORDER BY numero ASC");
+    $stmt_habs = $conexion->query(
+        "SELECT numero_habitacion AS numero, tipo_habitacion AS tipo, estado_limpieza AS estado
+         FROM habitacion ORDER BY numero_habitacion ASC"
+    );
     $habitaciones = $stmt_habs->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
+    error_log('Camarista - listar habitaciones: ' . $e->getMessage());
     $habitaciones = [];
 }
 
@@ -42,7 +63,7 @@ foreach ($habitaciones as $h) {
     }
 }
 
-$nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
+$nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -73,6 +94,7 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
         <span class="user-name"><?php echo htmlspecialchars($nombre_usuario); ?></span>
         <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'] ?? 'Camarista')); ?></span>
       </div>
+      <a href="../config/logout.php" title="Cerrar sesión" style="margin-left: 14px; color: inherit;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
   </header>
 
@@ -90,8 +112,8 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
       <?php if (count($habitaciones) > 0): ?>
         <?php foreach ($habitaciones as $index => $hab): ?>
           <?php 
-            $num_hab = $hab['numero'] ?? $hab['id_habitacion'];
-            $tipo_hab = $hab['tipo'] ?? 'Sencilla';
+            $num_hab = $hab['numero'];
+            $tipo_hab = $hab['tipo'];
             $estado_hab = $hab['estado'] ?? 'Sucia'; // Ej: 'Limpia', 'Sucia', 'Mantenimiento'
             
             // Clases dinámicas según estado
@@ -99,7 +121,7 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
             $is_clean = (strtolower($estado_hab) === 'limpia');
             $is_maint = (strtolower($estado_hab) === 'mantenimiento');
             
-            $badge_class = $is_clean ? 'clean' : ($is_dirty ? 'dirty' : 'maint');
+            $badge_class = $is_clean ? 'clean' : ($is_dirty ? 'dirty' : 'maintenance');
             $badge_text = ucfirst($estado_hab);
             
             // Por defecto abrimos la primera tarjeta, las demás contraídas
@@ -107,14 +129,14 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
             $body_style = ($index === 0) ? '' : 'display: none;';
           ?>
 
-          <div class="<?php echo $card_class; ?>" data-room="<?php echo $num_hab; ?>">
+          <div class="<?php echo $card_class; ?>" data-room="<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>">
             <div class="room-card-header" onclick="toggleCard(this)">
               <div>
                 <h2>Hab. <?php echo htmlspecialchars($num_hab); ?></h2>
                 <span class="room-type"><?php echo htmlspecialchars($tipo_hab); ?></span>
               </div>
               <div class="header-right">
-                <span class="badge <?php echo $badge_class; ?>" id="badge-<?php echo $num_hab; ?>"><?php echo $badge_text; ?></span>
+                <span class="badge <?php echo $badge_class; ?>" id="badge-<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>"><?php echo $badge_text; ?></span>
                 <?php if ($index !== 0): ?>
                   <span class="open-link">Abrir ›</span>
                 <?php endif; ?>
@@ -124,14 +146,14 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
             <div class="room-card-body" style="<?php echo $body_style; ?>">
               <span class="change-state-label">Cambiar estado</span>
               <div class="state-buttons">
-                <button type="button" class="state-btn clean-btn <?php echo $is_clean ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo $num_hab; ?>', 'Limpia')">
+                <button type="button" class="state-btn clean-btn <?php echo $is_clean ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>', 'Limpia')">
                   <i class="fa-solid fa-check"></i> Limpia
                 </button>
-                <button type="button" class="state-btn dirty-btn <?php echo $is_dirty ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo $num_hab; ?>', 'Sucia')">
+                <button type="button" class="state-btn dirty-btn <?php echo $is_dirty ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>', 'Sucia')">
                   Sucia
                 </button>
               </div>
-              <button type="button" class="state-btn maint-btn <?php echo $is_maint ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo $num_hab; ?>', 'Mantenimiento')">
+              <button type="button" class="state-btn maint-btn <?php echo $is_maint ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>', 'Mantenimiento')">
                 Mantenimiento
               </button>
             </div>
@@ -198,7 +220,7 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
           badge.className = 'badge';
           if (newState === 'Limpia') badge.classList.add('clean');
           else if (newState === 'Sucia') badge.classList.add('dirty');
-          else badge.classList.add('maint');
+          else badge.classList.add('maintenance');
 
           // Actualizar botones activos dentro de la tarjeta
           const card = document.querySelector(`[data-room="${roomNumber}"]`);
@@ -209,6 +231,12 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
           if (newState === 'Sucia') card.querySelector('.dirty-btn').classList.add('active');
           if (newState === 'Mantenimiento') card.querySelector('.maint-btn').classList.add('active');
 
+          // Actualizar el aviso de habitaciones sucias
+          const sucias = document.querySelectorAll('.badge.dirty').length;
+          document.getElementById('subtitleNotice').textContent = sucias === 0
+            ? '¡Excelente trabajo! No quedan habitaciones sucias.'
+            : `Tienes ${sucias} habitación${sucias === 1 ? '' : 'es'} sucia${sucias === 1 ? '' : 's'}.`;
+
           // Mostrar notificación flotante de éxito
           const notif = document.getElementById('successNotification');
           document.getElementById('notificationTitle').textContent = `Hab. ${roomNumber} marcada como ${newState}`;
@@ -218,7 +246,7 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Elena R.';
             notif.style.display = 'none';
           }, 3500);
         } else {
-          alert('Error al actualizar el estado de la habitación.');
+          alert(data.error || 'Error al actualizar el estado de la habitación.');
         }
       })
       .catch(error => {
