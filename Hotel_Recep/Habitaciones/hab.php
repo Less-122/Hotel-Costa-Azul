@@ -3,7 +3,6 @@ require_once '../../config/sesion.php';
 verificarAcceso(['recepcionista', 'admin']);   // solo recepción (o admin)
 
 require_once '../../config/conexion.php';
-
 $mensaje_exito = '';
 $mensaje_error = '';
 
@@ -17,7 +16,6 @@ if (($_GET['ok'] ?? '') === '1' && preg_match('/^[0-9A-Za-z]{1,5}$/', $_GET['hab
         $mensaje_exito .= " En mantenimiento la habitación queda como no disponible.";
     }
 }
-
 // Actualizar limpieza y disponibilidad de una habitación
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actualizar_habitacion') {
     $numero   = trim($_POST['id_habitacion'] ?? '');
@@ -48,7 +46,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actua
         }
     }
 }
-
 // Consultar todas las habitaciones
 try {
     $habitaciones = $conexion->query(
