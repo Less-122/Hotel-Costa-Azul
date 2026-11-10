@@ -1,8 +1,9 @@
 <?php
 session_start();
 require_once "../config/conexion.php";
+require_once "../config/sesion.php";
 
-$base_url = "/Hotel-Costa-Azul/";
+$base_url = urlBase();
 
 // Ruta de cada rol. Si un rol no está aquí, no tiene acceso (huesped incluido).
 $rutas = [

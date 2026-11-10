@@ -1,10 +1,6 @@
 <?php
-session_start();
-
-if (!isset($_SESSION['id_usuario']) || $_SESSION['rol'] !== 'admin') {
-    header("Location: /Hotel-Costa-Azul/personal_login/login_personal.php");
-    exit;
-}
+require_once '../../config/sesion.php';
+verificarAcceso(['admin']);
 
 require_once '../../config/conexion.php';
 

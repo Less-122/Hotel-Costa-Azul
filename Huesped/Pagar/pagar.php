@@ -1,11 +1,9 @@
 <?php
 session_start();
 require_once '../../config/conexion.php';
+require_once '../../config/sesion.php';
 
-if (!isset($_SESSION['id_usuario']) || $_SESSION['rol'] !== 'Huesped') {
-    header("Location: ../Login_regis/index.php?error=acceso_denegado");
-    exit();
-}
+verificarAcceso('huesped');
 
 $mensaje_exito = '';
 $mensaje_error = '';

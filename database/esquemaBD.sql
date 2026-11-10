@@ -7,6 +7,11 @@
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
+-- Recrea la BD con el nombre que usa config/conexion.php (solo desarrollo)
+DROP DATABASE IF EXISTS `hotel_costa_azul`;
+CREATE DATABASE `hotel_costa_azul` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE `hotel_costa_azul`;
+
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
@@ -32,7 +37,7 @@ CREATE TABLE `habitacion` (
   `tipo_habitacion` varchar(30) NOT NULL,
   `estado_limpieza` varchar(20) NOT NULL,
   `disponible` tinyint(1) NOT NULL DEFAULT 1
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Volcado de datos para la tabla `habitacion`
@@ -60,7 +65,7 @@ CREATE TABLE `pago` (
   `canal_pago` varchar(20) NOT NULL,
   `id_reservacion` int(11) NOT NULL,
   `id_recepcionista` int(11) DEFAULT NULL
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -104,7 +109,7 @@ CREATE TABLE `reservacion` (
   `numero_habitacion` varchar(5) NOT NULL,
   `id_tarifa` int(11) NOT NULL,
   `id_politica` int(11) NOT NULL
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -143,7 +148,7 @@ CREATE TABLE `usuario` (
   `correo` varchar(80) NOT NULL,
   `password` varchar(255) NOT NULL,
   `rol` varchar(20) NOT NULL DEFAULT 'Huesped'
-) ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Volcado de datos para la tabla `usuario`
@@ -153,6 +158,13 @@ INSERT INTO `usuario` (`id_usuario`, `nombre`, `contacto`, `correo`, `password`,
 (2, 'Edgar Olivan Gonzales', '7894561235', 'admin@gmail.com', '$2y$10$UXkkj.fnZyC4NkH1XOrc9.lBRVBsW3LBa1mtQvPR0h1Qs3H7FRNOG', 'Admin'),
 (3, 'Ismerai Martinez Dominguez', '1234567895', 'recepcionista1@gmail.com', '$2y$10$z.gaNSB3IwTSQTv28KftDO1ww6Ipc5X01U1752J6poii3cPDSy7UC', 'Recepcionista'),
 (4, 'Martina Moran Medina', '1234561234', 'camarista@gmail.com', '$2y$10$1GcznKp94OZovkkNx4/4Rew1sv016beANtMnDa1NBsuWszPUxhPxK', 'Camarista');
+
+-- Usuarios de demostración (contraseña: 123). Solo para desarrollo.
+INSERT INTO `usuario` (`nombre`, `contacto`, `correo`, `password`, `rol`) VALUES
+('Administrador Demo', '6000000001', 'admin@costaazul.test', '$2y$12$3ulNX4ykhh0OyPbZ3mdn7.x.IONAOz3urCWxTHAF7XYMYLqqqjpeG', 'Admin'),
+('Recepcionista Demo', '6000000002', 'recep1@costaazul.test', '$2y$12$GhC64KbNZnBy4gdQ3J48XOWz7Y/VugLq2hiPbyrzeS2ZD2iNWCZyO', 'Recepcionista'),
+('Camarista Demo', '6000000003', 'camarista@costaazul.test', '$2y$12$OeZm0xuqBAPORVFF3cGQQ.1AeX/ew3wz1fmDMdouUxvqvm0m/XxcO', 'Camarista'),
+('Huesped Demo', '6000000004', 'huesped.a@correo.test', '$2y$12$7FaFiCDpz9ZABtpHIykrdePR3wIbpl88npcmq9VSsOFEgJxyQLtHO', 'Huesped');
 
 --
 -- Índices para tablas volcadas

@@ -1,11 +1,8 @@
 <?php
 require_once '../../config/conexion.php';
-session_start();
+require_once '../../config/sesion.php';
 
-if (!isset($_SESSION['id_usuario']) || $_SESSION['rol'] !== 'Huesped') {
-    header("Location: ../Login_regis/index.php?error=acceso_denegado");
-    exit();
-}
+verificarAcceso('huesped');
 
 $fecha_entrada = $_GET['entrada'] ?? date('Y-m-d');
 $fecha_salida = $_GET['salida'] ?? date('Y-m-d', strtotime('+2 days'));

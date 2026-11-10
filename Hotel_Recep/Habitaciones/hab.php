@@ -1,69 +1,83 @@
 <?php
-session_start();
+require_once '../../config/sesion.php';
+verificarAcceso(['recepcionista', 'admin']);   // solo recepción (o admin)
 
-// Validación de seguridad por rol: Solo recepción o administradores pueden acceder
-if (!isset($_SESSION['rol']) || ($_SESSION['rol'] !== 'recepcion' && $_SESSION['rol'] !== 'admin')) {
-    header("Location: ../auth/login.php");
-    exit();
-}
-
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../config/conexion.php';
+require_once '../../config/conexion.php';
 
 $mensaje_exito = '';
 $mensaje_error = '';
 
-// Procesar el formulario cuando se actualiza una habitación
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'actualizar_habitacion') {
-    $id_habitacion = $_POST['id_habitacion'] ?? '';
-    $nuevo_estado_limpieza = $_POST['cleanStatus'] ?? '';
-    $nueva_disponibilidad = $_POST['dispStatus'] ?? '';
+$limpieza_validas = ['Limpia', 'Sucia', 'Mantenimiento'];
+$disp_validas     = ['Libre', 'Ocupada'];
 
-    if (!empty($id_habitacion)) {
+// Aviso tras guardar (se redirige después del POST para que F5 no reenvíe el formulario)
+if (($_GET['ok'] ?? '') === '1' && preg_match('/^[0-9A-Za-z]{1,5}$/', $_GET['hab'] ?? '')) {
+    $mensaje_exito = "¡Habitación " . $_GET['hab'] . " actualizada con éxito!";
+    if (($_GET['mant'] ?? '') === '1') {
+        $mensaje_exito .= " En mantenimiento la habitación queda como no disponible.";
+    }
+}
+
+// Actualizar limpieza y disponibilidad de una habitación
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actualizar_habitacion') {
+    $numero   = trim($_POST['id_habitacion'] ?? '');
+    $limpieza = $_POST['cleanStatus'] ?? '';
+    $disp     = $_POST['dispStatus'] ?? '';
+
+    if ($numero === '' || !in_array($limpieza, $limpieza_validas, true) || !in_array($disp, $disp_validas, true)) {
+        $mensaje_error = "Datos no válidos para actualizar la habitación.";
+    } else {
+        // En la BD, disponible = 1 (Libre) / 0 (Ocupada). Una habitación en mantenimiento nunca queda libre.
+        $forzada_mant = ($limpieza === 'Mantenimiento' && $disp === 'Libre');
+        $disponible   = ($disp === 'Libre' && $limpieza !== 'Mantenimiento') ? 1 : 0;
+
         try {
-            // Actualizamos limpieza y disponibilidad en la base de datos
-            $stmt_update = $conexion->prepare("UPDATE habitaciones SET estado_limpieza = ?, disponibilidad = ? WHERE id_habitacion = ? OR numero = ?");
-            $stmt_update->execute([$nuevo_estado_limpieza, $nueva_disponibilidad, $id_habitacion, $id_habitacion]);
-            $mensaje_exito = "¡Habitación $id_habitacion actualizada con éxito!";
+            $existe = $conexion->prepare("SELECT COUNT(*) FROM habitacion WHERE numero_habitacion = ?");
+            $existe->execute([$numero]);
+            if ((int) $existe->fetchColumn() === 0) {
+                $mensaje_error = "La habitación no existe.";
+            } else {
+                $conexion->prepare("UPDATE habitacion SET estado_limpieza = ?, disponible = ? WHERE numero_habitacion = ?")
+                         ->execute([$limpieza, $disponible, $numero]);
+                header("Location: hab.php?ok=1&hab=" . urlencode($numero) . ($forzada_mant ? "&mant=1" : ""));
+                exit();
+            }
         } catch (PDOException $e) {
-            $mensaje_error = "Error al actualizar la habitación: " . $e->getMessage();
+            error_log('Recepción - actualizar habitación: ' . $e->getMessage());
+            $mensaje_error = "No se pudo actualizar la habitación.";
         }
     }
 }
 
-// Consultar todas las habitaciones de la base de datos
+// Consultar todas las habitaciones
 try {
-    $stmt_habs = $conexion->query("SELECT id_habitacion, numero, tipo, estado_limpieza, disponibilidad FROM habitaciones ORDER BY numero ASC");
-    $habitaciones = $stmt_habs->fetchAll(PDO::FETCH_ASSOC);
+    $habitaciones = $conexion->query(
+        "SELECT numero_habitacion AS numero, tipo_habitacion AS tipo, estado_limpieza, disponible
+         FROM habitacion ORDER BY numero_habitacion ASC"
+    )->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
+    error_log('Recepción - listar habitaciones: ' . $e->getMessage());
     $habitaciones = [];
     $mensaje_error = "Error al cargar el listado de habitaciones.";
 }
 
-// Calcular contadores para las estadísticas (KPIs inferiores)
-$total_libres = 0;
-$total_ocupadas = 0;
-$total_sucias = 0;
-$total_mantenimiento = 0;
-
+// Contadores (KPIs inferiores)
+$total_libres = $total_ocupadas = $total_sucias = $total_mantenimiento = 0;
 foreach ($habitaciones as $h) {
-    $limpieza = strtolower($h['estado_limpieza'] ?? '');
-    $disp = strtolower($h['disponibilidad'] ?? '');
-
-    if ($limpieza === 'sucia') {
-        $total_sucias++;
-    } elseif ($limpieza === 'mantenimiento') {
+    $es_mant = (strtolower($h['estado_limpieza']) === 'mantenimiento');
+    if ($es_mant) {
         $total_mantenimiento++;
-    }
-
-    if ($disp === 'libre') {
+    } elseif ((int) $h['disponible'] === 1) {
         $total_libres++;
-    } elseif ($disp === 'ocupada') {
+    } else {
         $total_ocupadas++;
+    }
+    if (strtolower($h['estado_limpieza']) === 'sucia') {
+        $total_sucias++;
     }
 }
 
-$nombre_usuario = $_SESSION['nombre'] ?? 'Marta Pérez';
+$nombre_usuario = $_SESSION['nombre'] ?? 'Recepción';
 $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
 ?>
 <!DOCTYPE html>
@@ -90,9 +104,9 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
   <header class="navbar">
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
-      <a href="recep.php">Reservaciones</a>
+      <a href="../Recepcion/recep.php">Reservaciones</a>
       <a href="hab.php" class="active">Habitaciones</a>
-      <a href="pagos.php">Pagos</a>
+      <a href="../Pagos/pagos.php">Pagos</a>
     </nav>
     <div class="user-profile">
       <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
@@ -100,6 +114,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
         <span class="user-name"><?php echo htmlspecialchars($nombre_usuario); ?></span>
         <span class="user-role"><?php echo htmlspecialchars($rol_usuario); ?></span>
       </div>
+      <a href="../../config/logout.php" title="Cerrar sesión" style="margin-left: 14px; color: inherit;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
   </header>
 
@@ -147,21 +162,30 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
             <?php if (count($habitaciones) > 0): ?>
               <?php foreach ($habitaciones as $index => $hab): ?>
                 <?php 
-                  $num = $hab['numero'] ?? $hab['id_habitacion'];
-                  $tipo = $hab['tipo'] ?? 'Sencilla';
-                  $limpieza = $hab['estado_limpieza'] ?? 'Limpia';
-                  $disp = $hab['disponibilidad'] ?? 'Libre';
+                  $num = $hab['numero'];
+                  $tipo = $hab['tipo'];
+                  $limpieza = $hab['estado_limpieza'];
+                  $es_mant = (strtolower($limpieza) === 'mantenimiento');
+                  $disp = ((int) $hab['disponible'] === 1) ? 'Libre' : 'Ocupada';   // valor del formulario
                   
-                  // Clases CSS para badges
+                  // Clases CSS y etiquetas
                   $badge_clean_class = (strtolower($limpieza) === 'limpia') ? 'clean' : ((strtolower($limpieza) === 'sucia') ? 'dirty' : 'maintenance');
-                  $badge_disp_class = (strtolower($disp) === 'libre') ? 'free' : ((strtolower($disp) === 'ocupada') ? 'occupied' : 'na');
+                  $badge_disp_class = $es_mant ? 'na' : (($disp === 'Libre') ? 'free' : 'occupied');
+                  $disp_texto = $es_mant ? 'No disponible' : $disp;
                   $is_selected = ($index === 0) ? 'selected' : '';
+
+                  // Etiquetas para los filtros
+                  $tags = [];
+                  if ($es_mant) { $tags[] = 'mantenimiento'; }
+                  elseif ($disp === 'Libre') { $tags[] = 'libres'; }
+                  else { $tags[] = 'ocupadas'; }
+                  if (strtolower($limpieza) === 'sucia') { $tags[] = 'sucias'; }
                 ?>
-                <tr class="room-row <?php echo $is_selected; ?>" data-room="<?php echo $num; ?>" data-type="<?php echo $tipo; ?>" data-clean="<?php echo $limpieza; ?>" data-disp="<?php echo $disp; ?>" onclick="seleccionarHabitacion(this)">
+                <tr class="room-row <?php echo $is_selected; ?>" data-room="<?php echo htmlspecialchars($num, ENT_QUOTES); ?>" data-type="<?php echo htmlspecialchars($tipo, ENT_QUOTES); ?>" data-clean="<?php echo htmlspecialchars($limpieza, ENT_QUOTES); ?>" data-disp="<?php echo $disp; ?>" data-tags="<?php echo implode(' ', $tags); ?>" onclick="seleccionarHabitacion(this)">
                   <td><b><?php echo htmlspecialchars($num); ?></b></td>
                   <td><?php echo htmlspecialchars($tipo); ?></td>
                   <td><span class="badge <?php echo $badge_clean_class; ?>"><?php echo htmlspecialchars($limpieza); ?></span></td>
-                  <td><span class="badge <?php echo $badge_disp_class; ?>"><?php echo htmlspecialchars($disp); ?></span></td>
+                  <td><span class="badge <?php echo $badge_disp_class; ?>"><?php echo $disp_texto; ?></span></td>
                 </tr>
               <?php endforeach; ?>
             <?php else: ?>
@@ -205,13 +229,13 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       <div class="room-edit-box">
         
         <div class="edit-header">
-          <h2 id="selectedRoomTitle">Habitación <?php echo $habitaciones[0]['numero'] ?? '101'; ?></h2>
-          <span id="selectedRoomType" class="room-type-subtitle"><?php echo $habitaciones[0]['tipo'] ?? 'Sencilla'; ?></span>
+          <h2 id="selectedRoomTitle">Habitación <?php echo htmlspecialchars($habitaciones[0]['numero'] ?? ''); ?></h2>
+          <span id="selectedRoomType" class="room-type-subtitle"><?php echo htmlspecialchars($habitaciones[0]['tipo'] ?? ''); ?></span>
         </div>
 
         <form id="roomUpdateForm" method="POST" action="">
           <input type="hidden" name="accion" value="actualizar_habitacion">
-          <input type="hidden" id="inputRoomId" name="id_habitacion" value="<?php echo $habitaciones[0]['numero'] ?? '101'; ?>">
+          <input type="hidden" id="inputRoomId" name="id_habitacion" value="<?php echo htmlspecialchars($habitaciones[0]['numero'] ?? ''); ?>">
           
           <div class="section-label">Estado de limpieza</div>
           <div class="cleaning-options">
@@ -291,6 +315,23 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
         }
       });
     }
+
+    // Filtros (Todas / Libres / Ocupadas / Sucias / Mantenimiento)
+    document.querySelectorAll('.filter-pills .pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.filter-pills .pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        const filtro = pill.getAttribute('data-filter');
+        document.querySelectorAll('#roomsTableBody tr.room-row').forEach(row => {
+          const tags = (row.getAttribute('data-tags') || '').split(' ');
+          row.style.display = (filtro === 'todas' || tags.includes(filtro)) ? '' : 'none';
+        });
+      });
+    });
+
+    // Al abrir, el panel derecho muestra los datos reales de la primera habitación
+    const primeraFila = document.querySelector('.room-row.selected');
+    if (primeraFila) seleccionarHabitacion(primeraFila);
   </script>
 </body>
 </html>
