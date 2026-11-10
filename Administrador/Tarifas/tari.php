@@ -29,9 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                 $mensaje_exito = "¡Nueva tarifa guardada con éxito!";
             }
         } catch (PDOException $e) {
-            if ($conexion->inTransaction()) { $conexion->rollBack(); }
-            error_log('[Hotel Costa Azul] tari.php: ' . $e->getMessage());
-            $mensaje_error = "No se pudo guardar la tarifa. Intenta de nuevo.";
+            $mensaje_error = "Error al guardar en la base de datos: " . $e->getMessage();
         }
     } else {
         $mensaje_error = "Por favor completa todos los campos del formulario.";

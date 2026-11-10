@@ -95,7 +95,7 @@ if (isset($_GET['error'])) {
         <button type="submit" class="btn-submit">Iniciar sesión</button>
       </form>
       <div class="form-footer">
-        ¿Eres huésped y aún no tienes cuenta? <a href="regis.php">Crear cuenta</a>
+        ¿Eres personal nuevo o huésped? <a href="registro.php">Crear cuenta</a>
       </div>
     </div>
   </div>

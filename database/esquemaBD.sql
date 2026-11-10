@@ -11,10 +11,6 @@ SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
 
-SET NAMES utf8mb4;
-DROP DATABASE IF EXISTS hotel_costa_azul;
-CREATE DATABASE hotel_costa_azul CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-USE hotel_costa_azul;
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -36,7 +32,7 @@ CREATE TABLE `habitacion` (
   `tipo_habitacion` varchar(30) NOT NULL,
   `estado_limpieza` varchar(20) NOT NULL,
   `disponible` tinyint(1) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ;
 
 --
 -- Volcado de datos para la tabla `habitacion`
@@ -64,7 +60,7 @@ CREATE TABLE `pago` (
   `canal_pago` varchar(20) NOT NULL,
   `id_reservacion` int(11) NOT NULL,
   `id_recepcionista` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ;
 
 -- --------------------------------------------------------
 
@@ -108,7 +104,7 @@ CREATE TABLE `reservacion` (
   `numero_habitacion` varchar(5) NOT NULL,
   `id_tarifa` int(11) NOT NULL,
   `id_politica` int(11) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ;
 
 -- --------------------------------------------------------
 
@@ -147,7 +143,7 @@ CREATE TABLE `usuario` (
   `correo` varchar(80) NOT NULL,
   `password` varchar(255) NOT NULL,
   `rol` varchar(20) NOT NULL DEFAULT 'Huesped'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ;
 
 --
 -- Volcado de datos para la tabla `usuario`
@@ -157,16 +153,6 @@ INSERT INTO `usuario` (`id_usuario`, `nombre`, `contacto`, `correo`, `password`,
 (2, 'Edgar Olivan Gonzales', '7894561235', 'admin@gmail.com', '$2y$10$UXkkj.fnZyC4NkH1XOrc9.lBRVBsW3LBa1mtQvPR0h1Qs3H7FRNOG', 'Admin'),
 (3, 'Ismerai Martinez Dominguez', '1234567895', 'recepcionista1@gmail.com', '$2y$10$z.gaNSB3IwTSQTv28KftDO1ww6Ipc5X01U1752J6poii3cPDSy7UC', 'Recepcionista'),
 (4, 'Martina Moran Medina', '1234561234', 'camarista@gmail.com', '$2y$10$1GcznKp94OZovkkNx4/4Rew1sv016beANtMnDa1NBsuWszPUxhPxK', 'Camarista');
-
--- Datos FICTICIOS de demostración tuyos (añadidos de manera segura)
-INSERT INTO usuario (nombre, contacto, correo, password, rol) VALUES
-('Admin Demo',        '5550000001', 'admin@costaazul.test',    '$2y$10$XZfVmwbMCpJc5ioxX69N2.555ScRQZmKbxFjh.nTUUc1k1jbO1fje', 'Admin'),
-('Recepcion Uno',      '5550000002', 'recep1@costaazul.test',    '$2y$10$y6/wvXgRKHnj6Vpmvij1WOZIPG/kjO2qd97tGqINjibldn3p6NtwC', 'Recepcionista'),
-('Recepcion Dos',      '5550000003', 'recep2@costaazul.test',    '$2y$10$MTuPUVFiuMM0v6tyOWwbTOgORx7ay3jnC5p7pGCDCwI/OTTBsQFLS', 'Recepcionista'),
-('Camarista Demo',     '5550000004', 'camarista@costaazul.test','$2y$10$DEQHbJ2S.Y1alpRuwQExNOn9Cye4dIYJ085QB03J7TmWFoFdP3lpO', 'Camarista'),
-('Huesped Ficticio A', '5550000005', 'huesped.a@correo.test',    '$2y$10$XaBHDwoQEt2jnznfNbWcMuVvDWAZR5mrn3aNeK1P6g/YclBP7qdyK', 'Huesped'),
-('Huesped Ficticio B', '5550000006', 'huesped.b@correo.test',    '$2y$10$3qOkqx2vMffaOWYu1sgMgucn9eixMb3yaGLXmkhrM8vMoD3KAcM8e', 'Huesped'),
-('Huesped Ficticio C', '5550000007', 'huesped.c@correo.test',    '$2y$10$YTgRsKMEXXvo1BmjxJpSVeDz8s7/5Mf87kwEZtPVPxDFzl18AYZam', 'Huesped');
 
 --
 -- Índices para tablas volcadas
