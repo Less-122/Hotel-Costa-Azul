@@ -1,6 +1,6 @@
 <?php
-require_once '../../config/sesion.php';
-verificarAcceso(['admin']);
+require_once '../../config/sesion.php'; 
+verificarAcceso('admin');
 
 require_once '../../config/conexion.php';
 
@@ -56,14 +56,17 @@ try {
     <header class="navbar">
         <div class="logo">Hotel Costa Azul</div>
         <nav class="nav-links">
-    <a href="../Reportes/repo.php">Reportes</a>
-    <a href="tari.php" class="active">Tarifas</a>
-    <a href="../Politicas/poli.php">Políticas</a>
-    <a href="../Usuarios/usuarios.php">Usuarios</a>
-</nav>
-        <div class="user-profile">
-            <span class="user-name"><?php echo htmlspecialchars($_SESSION['nombre'] ?? 'Usuario'); ?></span>
-            <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'] ?? 'Invitado')); ?></span>
+            <a href="../Reportes/repo.php">Reportes</a>
+            <a href="tari.php" class="active">Tarifas</a>
+            <a href="../Politicas/poli.php">Políticas</a>
+            <a href="../Usuarios/usuarios.php">Usuarios</a>
+        </nav>
+        <div class="user-area">
+            <div class="user-profile">
+                <span class="user-name"><?php echo htmlspecialchars($_SESSION['nombre']); ?></span>
+                <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'])); ?></span>
+            </div>
+            <a href="../../config/logout.php" class="btn-logout">Salir</a>
         </div>
     </header>
 

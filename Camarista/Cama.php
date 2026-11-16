@@ -249,8 +249,8 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
           alert(data.error || 'Error al actualizar el estado de la habitación.');
         }
       })
-      .catch(error => {
-        console.error('Error:', error);
+      .catch(() => {
+        alert('No se pudo actualizar. Revisa tu conexión o vuelve a iniciar sesión.');
       });
     }
   </script>
