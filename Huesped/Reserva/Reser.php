@@ -223,7 +223,6 @@ foreach ($tipos as $t => $info) {
     </a>
   </div>
 </header>
-
   <main class="main-container">
     <?php if ($confirmada): ?>
       <div style="background: #fff; padding: 40px; border-radius: 8px; max-width: 600px; margin: 40px auto; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
