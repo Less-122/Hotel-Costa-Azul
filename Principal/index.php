@@ -1,41 +1,33 @@
 <?php
 require_once __DIR__ . '/../config/sesion.php';
+require_once __DIR__ . '/../config/conexion.php';
 
-// Conexión a la base de datos (ajusta la ruta según tu estructura)
-require_once '../config/conexion.php';
+// Tipos que se muestran; el precio sale de la tarifa vigente en la BD
+$tipos = [
+    'Sencilla' => [
+        'titulo' => 'Habitación Sencilla',
+        'lema'   => 'Confort y tranquilidad frente al mar',
+        'desc'   => 'Cama king size, aire acondicionado, Wi-Fi de alta velocidad, baño privado y televisión por cable.',
+        'img'    => 'https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=1400&auto=format&fit=crop',
+    ],
+    'Doble' => [
+        'titulo' => 'Habitación Doble',
+        'lema'   => 'Espacio ideal para familias o parejas',
+        'desc'   => 'Dos camas matrimoniales, balcón con vista al jardín, cafetera, minibar y amenidades de cortesía.',
+        'img'    => 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=1400&auto=format&fit=crop',
+    ],
+];
 
-// Variables por defecto para tarifas
-$precio_sencilla = 1200;
-$precio_doble = 1650;
-$precio_suite = 2800;
+$precios = $conexion->query("SELECT tipo_habitacion, precio_noche FROM tarifa WHERE vigente = 1")
+                    ->fetchAll(PDO::FETCH_KEY_PAIR);
+$tipos = array_intersect_key($tipos, $precios);   // solo los que tienen tarifa vigente
 
-try {
-    // Consultar las tarifas vigentes desde la base de datos
-    $stmt_tarifas = $conexion->query("SELECT tipo, precio FROM tarifas WHERE estado = 'Vigente'");
-    while ($t = $stmt_tarifas->fetch(PDO::FETCH_ASSOC)) {
-        if (strtolower($t['tipo']) === 'sencilla') $precio_sencilla = floatval($t['precio']);
-        if (strtolower($t['tipo']) === 'doble') $precio_doble = floatval($t['precio']);
-        if (strtolower($t['tipo']) === 'suite') $precio_suite = floatval($t['precio']);
-    }
-} catch (PDOException $e) {
-    // Si falla la consulta, conserva los valores base
-}
-
-// Consultar la política vigente para el modal
-$politica_vigente_texto = "Las cancelaciones sin penalización deben realizarse con al menos 48 horas de anticipación a la fecha de entrada.";
-try {
-    $stmt_poli = $conexion->query("SELECT descripcion FROM politicas WHERE estado = 'Vigente' LIMIT 1");
-    $pol_data = $stmt_poli->fetch(PDO::FETCH_ASSOC);
-    if ($pol_data && !empty($pol_data['descripcion'])) {
-        $politica_vigente_texto = $pol_data['descripcion'];
-    }
-} catch (PDOException $e) {
-    // Conservar texto predeterminado si hay error
-}
+$politica = $conexion->query("SELECT descripcion FROM politica_cancelacion WHERE vigente = 1 LIMIT 1")
+                     ->fetchColumn();
 
 $usuario_logueado = isset($_SESSION['id_usuario']);
-$nombre_usuario = $_SESSION['nombre'] ?? '';
-$rol_usuario = $_SESSION['rol'] ?? '';
+$nombre_usuario   = $_SESSION['nombre'] ?? '';
+$rol_usuario      = rolActual();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -44,25 +36,18 @@ $rol_usuario = $_SESSION['rol'] ?? '';
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hotel Costa Azul - Bienvenidos</title>
 
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
-
-  <!-- FontAwesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-  <!-- Estilos del Index -->
   <link rel="stylesheet" href="index.css">
 </head>
 <body>
 
-  <!-- Barra de Navegación Superior -->
   <header class="navbar">
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
       <a href="#habitaciones">Habitaciones</a>
-      <a href="#promociones">Promociones</a>
       <a href="#resenas">Reseñas</a>
       <a href="#contacto">Contacto</a>
     </nav>
@@ -71,9 +56,9 @@ $rol_usuario = $_SESSION['rol'] ?? '';
         <span class="user-welcome" style="margin-right: 15px; font-weight: 500;">
           Hola, <?php echo htmlspecialchars($nombre_usuario); ?>
         </span>
-        
-        <?php if (strtolower($rol_usuario) !== 'huesped'): ?>
-          <a href="<?php echo htmlspecialchars(paginaInicioRol(rolActual())); ?>" class="btn-login" style="margin-right: 10px;"><i class="fa-solid fa-hotel"></i> Panel</a>
+
+        <?php if ($rol_usuario !== 'huesped'): ?>
+          <a href="<?php echo htmlspecialchars(paginaInicioRol($rol_usuario)); ?>" class="btn-login" style="margin-right: 10px;"><i class="fa-solid fa-hotel"></i> Panel</a>
         <?php endif; ?>
 
         <a href="../config/logout.php" class="btn-login" style="background-color: #e74c3c; border-color: #e74c3c; color: white;">
@@ -85,40 +70,25 @@ $rol_usuario = $_SESSION['rol'] ?? '';
     </div>
   </header>
 
-  <!-- Sección Carrusel de Habitaciones -->
+  <!-- Carrusel -->
   <section class="carousel-section">
     <div class="carousel-container">
-      <div class="carousel-slide active" style="background-image: url('https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=1400&auto=format&fit=crop');">
-        <div class="carousel-caption">
-          <h2>Habitación Sencilla</h2>
-          <p>Confort y tranquilidad frente al mar · Desde $<?php echo number_format($precio_sencilla, 2); ?> / noche</p>
-          <a href="../Huesped/Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
+      <?php $primero = true; foreach ($tipos as $tipo => $t): ?>
+        <div class="carousel-slide <?php echo $primero ? 'active' : ''; ?>" style="background-image: url('<?php echo $t['img']; ?>');">
+          <div class="carousel-caption">
+            <h2><?php echo htmlspecialchars($t['titulo']); ?></h2>
+            <p><?php echo htmlspecialchars($t['lema']); ?> · Desde $<?php echo number_format($precios[$tipo], 2); ?> / noche</p>
+            <a href="../Huesped/Reserva/Reser.php?tipo=<?php echo urlencode($tipo); ?>" class="btn-carousel">Reservar ahora</a>
+          </div>
         </div>
-      </div>
+      <?php $primero = false; endforeach; ?>
 
-      <div class="carousel-slide" style="background-image: url('https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=1400&auto=format&fit=crop');">
-        <div class="carousel-caption">
-          <h2>Habitación Doble</h2>
-          <p>Espacio ideal para familias o parejas · Desde $<?php echo number_format($precio_doble, 2); ?> / noche</p>
-          <a href="../Huesped/Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
-        </div>
-      </div>
-
-      <div class="carousel-slide" style="background-image: url('https://images.unsplash.com/photo-1566665797739-1674de7a421a?q=80&w=1400&auto=format&fit=crop');">
-        <div class="carousel-caption">
-          <h2>Suite Costa Azul</h2>
-          <p>Vista panorámica y exclusividad total · Desde $<?php echo number_format($precio_suite, 2); ?> / noche</p>
-          <a href="../Huesped/Reserva/Reser.php" class="btn-carousel">Reservar ahora</a>
-        </div>
-      </div>
-
-      <!-- Controles del Carrusel -->
       <button class="carousel-btn prev" onclick="moveSlide(-1)"><i class="fa-solid fa-chevron-left"></i></button>
       <button class="carousel-btn next" onclick="moveSlide(1)"><i class="fa-solid fa-chevron-right"></i></button>
     </div>
   </section>
 
-  <!-- Sección de Precios y Habitaciones -->
+  <!-- Tarifas -->
   <section id="habitaciones" class="content-section">
     <div class="section-title">
       <h2>Nuestras Tarifas</h2>
@@ -126,41 +96,25 @@ $rol_usuario = $_SESSION['rol'] ?? '';
     </div>
 
     <div class="rooms-grid-home">
-      <div class="room-home-card">
-        <img src="https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=600&auto=format&fit=crop" alt="Habitación Sencilla">
-        <div class="room-home-info">
-          <h3>Habitación Sencilla</h3>
-          <p class="room-price">$<?php echo number_format($precio_sencilla, 2); ?> <span>/ noche</span></p>
-          <p class="room-desc">Cama king size, aire acondicionado, Wi-Fi de alta velocidad, baño privado y televisión por cable.</p>
-          <a href="../Huesped/Reserva/Reser.php?tipo=Sencilla" class="btn-home-card">Elegir habitación</a>
+      <?php foreach ($tipos as $tipo => $t): ?>
+        <div class="room-home-card">
+          <img src="<?php echo str_replace('w=1400', 'w=600', str_replace('q=80&w=1400', 'q=80&w=600', $t['img'])); ?>" alt="<?php echo htmlspecialchars($t['titulo']); ?>">
+          <div class="room-home-info">
+            <h3><?php echo htmlspecialchars($t['titulo']); ?></h3>
+            <p class="room-price">$<?php echo number_format($precios[$tipo], 2); ?> <span>/ noche</span></p>
+            <p class="room-desc"><?php echo htmlspecialchars($t['desc']); ?></p>
+            <a href="../Huesped/Reserva/Reser.php?tipo=<?php echo urlencode($tipo); ?>" class="btn-home-card">Elegir habitación</a>
+          </div>
         </div>
-      </div>
+      <?php endforeach; ?>
 
-      <div class="room-home-card">
-        <img src="https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=600&auto=format&fit=crop" alt="Habitación Doble">
-        <div class="room-home-info">
-          <h3>Habitación Doble</h3>
-          <p class="room-price">$<?php echo number_format($precio_doble, 2); ?> <span>/ noche</span></p>
-          <p class="room-desc">Dos camas matrimoniales, balcón con vista al jardín, cafetera, minibar y amenidades de cortesía.</p>
-          <a href="../Huesped/Reserva/Reser.php?tipo=Doble" class="btn-home-card">Elegir habitación</a>
-        </div>
-      </div>
+      <?php if (!$tipos): ?>
+        <p style="text-align: center; color: #666;">Consulta nuestras tarifas en recepción.</p>
+      <?php endif; ?>
     </div>
   </section>
 
-  <!-- Sección de Promociones -->
-  <section id="promociones" class="promo-section">
-    <div class="promo-box">
-      <div class="promo-icon"><i class="fa-solid fa-tag"></i></div>
-      <div class="promo-text">
-        <h2>Promoción de Temporada: ¡Escapada de Fin de Semana!</h2>
-        <p>Reserva de viernes a domingo en fechas seleccionadas y obtén un <strong>15% de descuento</strong> en tu estancia aplicando el código de anticipo.</p>
-      </div>
-      <a href="../Huesped/Reserva/Reser.php" class="btn-promo">Aprovechar oferta</a>
-    </div>
-  </section>
-
-  <!-- Sección de Reseñas -->
+  <!-- Reseñas -->
   <section id="resenas" class="content-section bg-light">
     <div class="section-title">
       <h2>Lo que dicen nuestros huéspedes</h2>
@@ -181,11 +135,9 @@ $rol_usuario = $_SESSION['rol'] ?? '';
     </div>
   </section>
 
-  <!-- Pie de Página (Footer) -->
+  <!-- Footer -->
   <footer id="contacto" class="footer-section">
     <div class="footer-container">
-      
-      <!-- Columna 1: Info y Contacto -->
       <div class="footer-col">
         <h3>Hotel Costa Azul</h3>
         <p><i class="fa-solid fa-phone"></i> Teléfono: +52 (777) 123-4567</p>
@@ -197,7 +149,6 @@ $rol_usuario = $_SESSION['rol'] ?? '';
         </div>
       </div>
 
-      <!-- Columna 2: Mapa de Ubicación -->
       <div class="footer-col">
         <h3>Ubicación</h3>
         <div class="map-box">
@@ -206,33 +157,26 @@ $rol_usuario = $_SESSION['rol'] ?? '';
         </div>
         <button class="btn-policies" onclick="openPolicyModal()">Políticas del Hotel</button>
       </div>
-
     </div>
     <div class="footer-bottom">
       <p>&copy; <?php echo date('Y'); ?> Hotel Costa Azul. Todos los derechos reservados.</p>
     </div>
   </footer>
 
-  <!-- Modal de Políticas del Hotel Dinámico -->
+  <!-- Modal de políticas -->
   <div id="policyModal" class="modal-overlay" style="display: none;">
     <div class="modal-content">
       <h2>Políticas del Hotel</h2>
-      <p>1. Las reservaciones requieren un anticipo mínimo del 30% para garantizar la estancia.</p>
-      <p>2. <?php echo htmlspecialchars($politica_vigente_texto); ?></p>
-      <p>3. El horario de entrada es a partir de las 15:00 hrs y la salida es a las 12:00 hrs.</p>
+      <p>1. Cancelación: <?php echo $politica ? htmlspecialchars($politica) : 'consulta la política vigente en recepción.'; ?></p>
+      <p>2. El horario de entrada es a partir de las 15:00 hrs y la salida es a las 12:00 hrs.</p>
       <button class="modal-close-btn" onclick="closePolicyModal()">Entendido</button>
     </div>
   </div>
 
-  <!-- Script de Interacciones y Modal -->
   <script src="index.js"></script>
   <script>
-    function openPolicyModal() {
-      document.getElementById('policyModal').style.display = 'flex';
-    }
-    function closePolicyModal() {
-      document.getElementById('policyModal').style.display = 'none';
-    }
+    function openPolicyModal()  { document.getElementById('policyModal').style.display = 'flex'; }
+    function closePolicyModal() { document.getElementById('policyModal').style.display = 'none'; }
   </script>
 </body>
 </html>

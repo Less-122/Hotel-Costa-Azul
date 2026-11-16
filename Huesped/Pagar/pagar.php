@@ -5,76 +5,82 @@ require_once '../../config/sesion.php';
 
 verificarAcceso('huesped');
 
-$mensaje_exito = '';
+$id_huesped = (int) $_SESSION['id_usuario'];
+$codigo     = trim($_REQUEST['codigo'] ?? '');
+
+function fecha(string $f): string {
+    $meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    $t = strtotime($f);
+    return date('d', $t) . ' ' . $meses[date('n', $t) - 1] . ' ' . date('Y', $t);
+}
+
+/** Busca una reservación del huésped y calcula total, pagado y saldo. */
+function buscarReservacion(PDO $conexion, string $codigo, int $id_huesped, bool $bloquear = false): ?array {
+    $sql = "SELECT r.id_reservacion, r.numero_confirmacion, r.estado, r.fecha_entrada, r.fecha_salida,
+                   r.numero_habitacion, h.tipo_habitacion, t.precio_noche,
+                   DATEDIFF(r.fecha_salida, r.fecha_entrada) AS noches,
+                   (SELECT COALESCE(SUM(monto), 0) FROM pago WHERE id_reservacion = r.id_reservacion) AS pagado
+            FROM reservacion r
+            JOIN tarifa t     ON r.id_tarifa = t.id_tarifa
+            JOIN habitacion h ON r.numero_habitacion = h.numero_habitacion
+            WHERE r.numero_confirmacion = ? AND r.id_huesped = ?";
+    if ($bloquear) {
+        $sql .= " FOR UPDATE";
+    }
+    $stmt = $conexion->prepare($sql);
+    $stmt->execute([$codigo, $id_huesped]);
+    $r = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$r) {
+        return null;
+    }
+    $r['costo'] = max(1, (int) $r['noches']) * $r['precio_noche'];
+    $r['saldo'] = max(0, round($r['costo'] - $r['pagado'], 2));
+    return $r;
+}
+
+$mensaje_exito = isset($_GET['ok']) ? "Pago procesado correctamente." : '';
 $mensaje_error = '';
-$codigo_buscado = trim($_GET['codigo'] ?? 'AX7B9');
-$reservacion = null;
-$total_pagado = 0;
-$saldo_pendiente = 0;
-$costo_total = 0;
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'procesar_pago_linea') {
-    $codigo_res = trim($_POST['codigo_reservacion'] ?? '');
-    $tipo_pago = $_POST['tipo_pago'] ?? 'Anticipo';
-    $monto = floatval($_POST['monto'] ?? 0);
+// PAGAR
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $monto = round((float) ($_POST['monto'] ?? 0), 2);
 
-    if (!empty($codigo_res) && $monto > 0) {
-        try {
-            $stmt_res = $conexion->prepare("SELECT id_reservacion FROM reservacion WHERE numero_confirmacion = ? OR id_reservacion = ?");
-            $stmt_res->execute([$codigo_res, $codigo_res]);
-            $res_data = $stmt_res->fetch(PDO::FETCH_ASSOC);
+    try {
+        // La transacción bloquea la reservación mientras se valida el saldo,
+        // así dos pagos simultáneos no pueden sobrepasarlo.
+        $conexion->beginTransaction();
+        $r = buscarReservacion($conexion, $codigo, $id_huesped, true);
 
-            if ($res_data) {
-                $id_reservacion = $res_data['id_reservacion'];
-                $stmt_insert = $conexion->prepare("
-                    INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista) 
-                    VALUES (?, NOW(), ?, 'Pasarela en línea', ?, NULL)
-                ");
-                if ($stmt_insert->execute([$monto, $tipo_pago, $id_reservacion])) {
-                    $mensaje_exito = "¡Pago procesado con éxito por $" . number_format($monto, 2) . "!";
-                    $codigo_buscado = $codigo_res;
-                }
-            } else {
-                $mensaje_error = "No se encontró la reservación especificada.";
-            }
-        } catch (PDOException $e) {
-            $mensaje_error = "Error al procesar el pago: " . $e->getMessage();
+        if (!$r || $r['estado'] !== 'Activa') {
+            $mensaje_error = "La reservación no existe, no es tuya o no está activa.";
+        } elseif ($monto <= 0 || $monto > $r['saldo']) {
+            $mensaje_error = "El monto debe ser mayor a 0 y no superar tu saldo pendiente ($"
+                           . number_format($r['saldo'], 2) . ").";
+        } else {
+            $tipo = (abs($monto - $r['saldo']) < 0.005) ? 'Liquidación' : 'Anticipo';
+
+            $conexion->prepare(
+                "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                 VALUES (?, NOW(), ?, 'Pasarela en línea', ?, NULL)"
+            )->execute([$monto, $tipo, $r['id_reservacion']]);
+
+            $conexion->commit();
+            header("Location: pagar.php?codigo=" . urlencode($codigo) . "&ok=1");
+            exit;
         }
-    } else {
-        $mensaje_error = "El monto a pagar debe ser mayor a 0.";
+    } catch (PDOException $e) {
+        $mensaje_error = "No se pudo procesar el pago.";
+    }
+
+    if ($conexion->inTransaction()) {
+        $conexion->rollBack();
     }
 }
 
-try {
-    $stmt_busqueda = $conexion->prepare("
-        SELECT r.*, u.nombre AS nombre_huesped, h.tipo_habitacion, t.precio_noche 
-        FROM reservacion r 
-        LEFT JOIN usuario u ON r.id_huesped = u.id_usuario 
-        LEFT JOIN habitacion h ON r.numero_habitacion = h.numero_habitacion 
-        LEFT JOIN tarifa t ON r.id_tarifa = t.id_tarifa
-        WHERE r.numero_confirmacion = ? OR r.id_reservacion = ?
-    ");
-    $stmt_busqueda->execute([$codigo_buscado, $codigo_buscado]);
-    $reservacion = $stmt_busqueda->fetch(PDO::FETCH_ASSOC);
-
-    if ($reservacion) {
-        $id_res = $reservacion['id_reservacion'];
-        $noches = max(1, (strtotime($reservacion['fecha_salida']) - strtotime($reservacion['fecha_entrada'])) / (60 * 60 * 24));
-        $precio_noche = floatval($reservacion['precio_noche'] ?? 850.00);
-        $costo_total = $noches * $precio_noche;
-
-        $stmt_pagos = $conexion->prepare("SELECT SUM(monto) AS total_pagado FROM pago WHERE id_reservacion = ?");
-        $stmt_pagos->execute([$id_res]);
-        $res_pagos = $stmt_pagos->fetch(PDO::FETCH_ASSOC);
-        $total_pagado = floatval($res_pagos['total_pagado'] ?? 0);
-
-        $saldo_pendiente = max(0, $costo_total - $total_pagado);
-    }
-} catch (PDOException $e) {
-    $reservacion = null;
-}
-
-$nombre_cliente = $reservacion ? trim($reservacion['nombre_huesped']) : $_SESSION['nombre'];
+// BUSCAR (solo entre las reservaciones del huésped en sesión)
+$reservacion = ($codigo !== '') ? buscarReservacion($conexion, $codigo, $id_huesped) : null;
+$puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservacion['saldo'] > 0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -100,19 +106,19 @@ $nombre_cliente = $reservacion ? trim($reservacion['nombre_huesped']) : $_SESSIO
       <h1>Pagar mi reservación</h1>
       <p class="subtitle">Abona un anticipo o liquida tu saldo en línea.</p>
 
-      <?php if (!empty($mensaje_exito)): ?>
-          <div class="alert alert-success" style="color: #3c763d; background: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo $mensaje_exito; ?></div>
+      <?php if ($mensaje_exito): ?>
+          <div class="alert alert-success" style="color: #3c763d; background: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo htmlspecialchars($mensaje_exito); ?></div>
       <?php endif; ?>
-      <?php if (!empty($mensaje_error)): ?>
-          <div class="alert alert-danger" style="color: #a94442; background: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo $mensaje_error; ?></div>
+      <?php if ($mensaje_error): ?>
+          <div class="alert alert-danger" style="color: #a94442; background: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo htmlspecialchars($mensaje_error); ?></div>
       <?php endif; ?>
 
-      <form method="GET" action="" class="search-form">
+      <form method="GET" class="search-form">
         <div class="input-group">
           <label for="reservationCode">Código de reservación</label>
           <div class="input-field">
-            <i class="fa-regular fa-ticket"></i>
-            <input type="text" id="reservationCode" name="codigo" value="<?php echo htmlspecialchars($codigo_buscado); ?>" placeholder="Ej. AX7B9" required>
+            <i class="fa-solid fa-ticket"></i>
+            <input type="text" id="reservationCode" name="codigo" value="<?php echo htmlspecialchars($codigo); ?>" placeholder="Ej. AX7B9" required>
           </div>
         </div>
         <button type="submit" class="btn-search"><i class="fa-solid fa-magnifying-glass"></i> Buscar</button>
@@ -120,51 +126,72 @@ $nombre_cliente = $reservacion ? trim($reservacion['nombre_huesped']) : $_SESSIO
 
       <?php if ($reservacion): ?>
         <div class="reservation-summary-card">
-          <div class="res-guest-name"><?php echo htmlspecialchars($nombre_cliente); ?></div>
+          <div class="res-guest-name"><?php echo htmlspecialchars($_SESSION['nombre']); ?></div>
           <div class="res-info-details">
-              <?php echo date('d M', strtotime($reservacion['fecha_entrada'])); ?> → <?php echo date('d M Y', strtotime($reservacion['fecha_salida'])); ?> · Hab. <?php echo htmlspecialchars($reservacion['numero_habitacion']); ?> (<?php echo htmlspecialchars($reservacion['tipo_habitacion']); ?>)
+              <?php echo fecha($reservacion['fecha_entrada']); ?> → <?php echo fecha($reservacion['fecha_salida']); ?>
+              · Hab. <?php echo htmlspecialchars($reservacion['numero_habitacion']); ?>
+              (<?php echo htmlspecialchars($reservacion['tipo_habitacion']); ?>)
           </div>
           <div class="res-financials">
-            <span class="fin-item">Total <b>$<?php echo number_format($costo_total, 2); ?></b></span>
+            <span class="fin-item">Total <b>$<?php echo number_format($reservacion['costo'], 2); ?></b></span>
             <span class="fin-dot">·</span>
-            <span class="fin-item">Pagado <b>$<?php echo number_format($total_pagado, 2); ?></b></span>
+            <span class="fin-item">Pagado <b>$<?php echo number_format($reservacion['pagado'], 2); ?></b></span>
           </div>
           <div class="balance-row">
             <span class="balance-label">Saldo pendiente</span>
-            <span class="balance-amount">$<?php echo number_format($saldo_pendiente, 2); ?></span>
+            <span class="balance-amount">$<?php echo number_format($reservacion['saldo'], 2); ?></span>
           </div>
         </div>
-      <?php else: ?>
-        <p style="text-align: center; color: #666; padding: 15px;">No se encontró ninguna reservación con ese código.</p>
+      <?php elseif ($codigo !== ''): ?>
+        <p style="text-align: center; color: #666; padding: 15px;">No se encontró ninguna reservación tuya con ese código.</p>
       <?php endif; ?>
     </section>
 
     <aside class="right-section">
       <div class="card-box">
-        <h2>Datos de la tarjeta</h2>
-        <form id="paymentForm" method="POST" action="">
-          <input type="hidden" name="accion" value="procesar_pago_linea">
-          <input type="hidden" name="codigo_reservacion" value="<?php echo htmlspecialchars($codigo_buscado); ?>">
-          <input type="hidden" name="tipo_pago" value="Anticipo">
-          
-          <div class="input-group">
-            <label>Nombre en la tarjeta</label>
-            <div class="input-field"><input type="text" name="cardName" value="<?php echo htmlspecialchars($nombre_cliente); ?>" required></div>
-          </div>
-          <div class="input-group">
-            <label>Número de tarjeta</label>
-            <div class="input-field"><input type="text" placeholder="•••• •••• •••• ••••" required></div>
-          </div>
-          <div class="form-row">
-            <div class="input-group"><label>Vence</label><div class="input-field"><input type="text" placeholder="MM / AA" required></div></div>
-            <div class="input-group"><label>CVV</label><div class="input-field"><input type="password" placeholder="•••" maxlength="4" required></div></div>
-          </div>
-          <div class="input-group" style="margin-top: 15px;">
-            <label>Monto a abonar</label>
-            <div class="input-field"><input type="number" step="0.01" id="amountInput" name="monto" value="<?php echo $saldo_pendiente > 0 ? $saldo_pendiente : 500; ?>" required></div>
-          </div>
-          <button type="submit" class="btn-pay-submit"><i class="fa-solid fa-lock"></i> Pagar</button>
-        </form>
+        <?php if ($puede_pagar): ?>
+          <h2>Datos de la tarjeta</h2>
+          <!-- Los datos de la tarjeta no tienen "name": no se envían ni se guardan -->
+          <form method="POST" autocomplete="off">
+            <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo); ?>">
+
+            <div class="input-group">
+              <label for="cardName">Nombre en la tarjeta</label>
+              <div class="input-field"><input type="text" id="cardName" value="<?php echo htmlspecialchars($_SESSION['nombre']); ?>" required></div>
+            </div>
+            <div class="input-group">
+              <label for="cardNumber">Número de tarjeta</label>
+              <div class="input-field"><input type="text" id="cardNumber" inputmode="numeric" maxlength="19" pattern="[0-9 ]{15,19}" placeholder="•••• •••• •••• ••••" required></div>
+            </div>
+            <div class="form-row">
+              <div class="input-group">
+                <label for="cardExp">Vence</label>
+                <div class="input-field"><input type="text" id="cardExp" maxlength="7" pattern="(0[1-9]|1[0-2]) ?/ ?[0-9]{2}" placeholder="MM / AA" required></div>
+              </div>
+              <div class="input-group">
+                <label for="cardCvv">CVV</label>
+                <div class="input-field"><input type="password" id="cardCvv" inputmode="numeric" maxlength="4" pattern="[0-9]{3,4}" placeholder="•••" required></div>
+              </div>
+            </div>
+            <div class="input-group" style="margin-top: 15px;">
+              <label for="amountInput">Monto a abonar</label>
+              <div class="input-field">
+                <input type="number" id="amountInput" name="monto" step="0.01" min="0.01"
+                       max="<?php echo $reservacion['saldo']; ?>" value="<?php echo $reservacion['saldo']; ?>" required>
+              </div>
+            </div>
+            <button type="submit" class="btn-pay-submit"><i class="fa-solid fa-lock"></i> Pagar</button>
+          </form>
+        <?php elseif ($reservacion && $reservacion['estado'] !== 'Activa'): ?>
+          <h2>Pago no disponible</h2>
+          <p style="color: #666;">Esta reservación está <?php echo htmlspecialchars(strtolower($reservacion['estado'])); ?>.</p>
+        <?php elseif ($reservacion): ?>
+          <h2>Reservación liquidada</h2>
+          <p style="color: #666;">No tienes saldo pendiente.</p>
+        <?php else: ?>
+          <h2>Datos de la tarjeta</h2>
+          <p style="color: #666;">Busca tu reservación para poder pagar.</p>
+        <?php endif; ?>
       </div>
     </aside>
   </main>

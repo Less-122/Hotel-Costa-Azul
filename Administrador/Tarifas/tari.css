@@ -219,3 +219,23 @@ body {
     line-height: 1.4;
     margin-top: 20px;
 }
+
+.user-area {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.btn-logout {
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 13px;
+    border: 1px solid #475569;
+    padding: 6px 12px;
+    border-radius: 8px;
+}
+
+.btn-logout:hover {
+    color: #ffffff;
+    border-color: #ffffff;
+}

@@ -1,6 +1,6 @@
 <?php
-require_once '../../config/sesion.php';
-verificarAcceso(['admin']);
+require_once '../../config/sesion.php'; 
+verificarAcceso('admin');
 
 require_once '../../config/conexion.php';
 
@@ -116,9 +116,12 @@ $usuarios = $conexion->query(
             <a href="../Politicas/poli.php">Políticas</a>
             <a href="usuarios.php" class="active">Usuarios</a>
         </nav>
-        <div class="user-profile">
-            <span class="user-name"><?php echo htmlspecialchars($_SESSION['nombre']); ?></span>
-            <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'])); ?></span>
+        <div class="user-area">
+            <div class="user-profile">
+                <span class="user-name"><?php echo htmlspecialchars($_SESSION['nombre']); ?></span>
+                <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'])); ?></span>
+            </div>
+            <a href="../../config/logout.php" class="btn-logout">Salir</a>
         </div>
     </header>
 

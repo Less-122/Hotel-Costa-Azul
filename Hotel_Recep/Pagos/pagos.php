@@ -4,6 +4,12 @@ verificarAcceso(['recepcionista', 'admin']);   // solo recepción (o admin)
 
 require_once '../../config/conexion.php';
 
+function fecha(string $f): string {
+    $meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    $t = strtotime($f);
+    return date('d', $t) . ' ' . $meses[date('n', $t) - 1] . ' ' . date('Y', $t);
+}
+
 $mensaje_exito = '';
 $mensaje_error = '';
 
@@ -72,10 +78,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'regis
                 if ($monto > $saldo) {
                     $conexion->rollBack();
                     $mensaje_error = "El monto ($" . number_format($monto, 2) . ") supera el saldo pendiente ($" . number_format(max(0, $saldo), 2) . ").";
+                } elseif ($tipo_pago === 'Liquidación' && abs($monto - $saldo) >= 0.005) {
+                    $conexion->rollBack();
+                    $mensaje_error = "Una liquidación debe cubrir todo el saldo pendiente ($" . number_format($saldo, 2) . ").";
+                } elseif ($tipo_pago === 'Anticipo' && abs($monto - $saldo) < 0.005) {
+                    $conexion->rollBack();
+                    $mensaje_error = "Este monto cubre todo el saldo: regístralo como Liquidación.";
                 } else {
                     $conexion->prepare("
                         INSERT INTO pago (monto, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                        VALUES (?, ?, 'Terminal', ?, ?)
+                        VALUES (?, ?, 'Terminal recepción', ?, ?)
                     ")->execute([$monto, $tipo_pago, $res['id_reservacion'], $_SESSION['id_usuario']]);
                     $conexion->commit();
 
@@ -187,7 +199,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
         <div class="input-group">
           <label>Código de reservación</label>
           <div class="input-field">
-            <i class="fa-regular fa-ticket"></i>
+            <i class="fa-solid fa-ticket"></i>
             <input type="text" name="codigo" maxlength="5" value="<?php echo htmlspecialchars($codigo_buscado); ?>" placeholder="Ej. AX7B9" required>
           </div>
         </div>
@@ -201,7 +213,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
         <div class="guest-financial-card">
           <div class="guest-name-title"><?php echo htmlspecialchars($reservacion['nombre_huesped']); ?></div>
           <div class="guest-stay-info">
-              <?php echo date('d M', strtotime($reservacion['fecha_entrada'])); ?> → <?php echo date('d M Y', strtotime($reservacion['fecha_salida'])); ?> · <?php echo htmlspecialchars($reservacion['tipo_habitacion'] . ' ' . $reservacion['numero_habitacion']); ?> · <?php echo htmlspecialchars($reservacion['estado']); ?>
+             <?php echo fecha($reservacion['fecha_entrada']); ?> → <?php echo fecha($reservacion['fecha_salida']); ?> · <?php echo htmlspecialchars($reservacion['tipo_habitacion'] . ' ' . $reservacion['numero_habitacion']); ?> · <?php echo htmlspecialchars($reservacion['estado']); ?>
           </div>
 
           <div class="financial-rows">
@@ -242,7 +254,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
             <div class="input-group">
               <label>Monto</label>
               <div class="input-field">
-                <i class="fa-regular fa-credit-card"></i>
+                <i class="fa-solid fa-ticket"></i>
                 <input type="number" step="0.01" min="0.01" max="<?php echo $saldo_pendiente; ?>" name="monto" id="paymentAmountInput" data-saldo="<?php echo $saldo_pendiente; ?>" placeholder="0.00" required>
               </div>
             </div>
@@ -288,7 +300,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
               <?php if (count($historial_pagos) > 0): ?>
                 <?php foreach ($historial_pagos as $pago): ?>
                   <tr>
-                    <td><?php echo date('d M - H:i', strtotime($pago['fecha_hora'])); ?></td>
+                    <td><?php echo fecha($pago['fecha_hora']) . date(' - H:i', strtotime($pago['fecha_hora'])); ?></td>
                     <td><?php echo htmlspecialchars($pago['tipo_pago']); ?></td>
                     <td>$<?php echo number_format((float) $pago['monto'], 2); ?></td>
                     <td><?php echo htmlspecialchars($pago['registrado_por']); ?></td>

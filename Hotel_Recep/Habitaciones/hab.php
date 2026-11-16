@@ -3,6 +3,13 @@ require_once '../../config/sesion.php';
 verificarAcceso(['recepcionista', 'admin']);   // solo recepción (o admin)
 
 require_once '../../config/conexion.php';
+
+function fecha(string $f): string {
+    $meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    $t = strtotime($f);
+    return date('d', $t) . ' ' . $meses[date('n', $t) - 1] . ' ' . date('Y', $t);
+}
+
 $mensaje_exito = '';
 $mensaje_error = '';
 
@@ -123,7 +130,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       
       <div class="header-title-area">
         <h1>Habitaciones</h1>
-        <p>Hoy · <?php echo date('d M Y'); ?> · estado de limpieza y disponibilidad en tiempo real</p>
+        <p>Hoy · <?php echo fecha(date('Y-m-d')); ?> · estado de limpieza y disponibilidad en tiempo real</p>
       </div>
 
       <?php if (!empty($mensaje_exito)): ?>
