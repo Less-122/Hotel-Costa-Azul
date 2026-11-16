@@ -200,16 +200,29 @@ foreach ($tipos as $t => $info) {
   <title>Hotel Costa Azul - Reservar estancia</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="Reser.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
   <header class="navbar">
-    <div class="nav-brand">Hotel Costa Azul</div>
-    <nav class="nav-links">
-      <a href="Reser.php" class="active">Reservar</a>
-      <a href="../Pagar/pagar.php">Pagar</a>
-      <a href="../Cancelar/Cance.php">Cancelar reservación</a>
-    </nav>
-  </header>
+  <div class="nav-brand">Hotel Costa Azul</div>
+  <nav class="nav-links">
+    <a href="Reser.php" class="active">Reservar</a>
+    <a href="../Pagar/pagar.php">Pagar</a>
+    <a href="../Cancelar/Cance.php">Cancelar reservación</a>
+  </nav>
+  <div class="nav-user">
+    <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
+    <div class="user-info">
+      <strong><?php echo htmlspecialchars($_SESSION['nombre']); ?></strong>
+      <span>Huésped</span>
+    </div>
+    <a href="../../Principal/index.php" class="btn-home" title="Volver al inicio">
+      <i class="fa-solid fa-house"></i>
+    </a>
+  </div>
+</header>
 
   <main class="main-container">
     <?php if ($confirmada): ?>
@@ -285,28 +298,42 @@ foreach ($tipos as $t => $info) {
         </div>
       </section>
 
-      <section class="right-section">
-        <div class="summary-card">
-          <h3>Tus datos y resumen</h3>
-          <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Huésped: <strong><?php echo htmlspecialchars($_SESSION['nombre']); ?></strong></p>
-          <div class="summary-details">
-            <p>Estancia: <strong><?php echo $noches; ?> noche(s)</strong></p>
-            <p>Del <?php echo fecha($entrada); ?> al <?php echo fecha($salida); ?></p>
-            <?php if ($tipo_inicial): ?>
-              <p style="margin-top: 10px; font-size: 16px; color: #102948;">Habitación: <strong id="lblTipoSeleccionado"><?php echo htmlspecialchars($tipo_inicial); ?></strong></p>
-              <p style="font-size: 18px; font-weight: bold; color: #667121; margin-top: 5px;">Total estimado: $<span id="lblTotalCalculado"><?php echo number_format($noches * $precios[$tipo_inicial], 2); ?></span></p>
-            <?php else: ?>
-              <p style="margin-top: 10px; color: #a94442;">No hay habitaciones disponibles en estas fechas. Prueba con otras.</p>
-            <?php endif; ?>
-          </div>
-          <div style="margin-top: 15px;">
-            <label for="notas" style="font-size: 13px; font-weight: 500;">Solicitudes especiales (opcional)</label>
-            <textarea id="notas" name="notas" form="formReserva" maxlength="255" placeholder="Ej. Cama extra..." style="width: 100%; height: 70px; margin-top: 5px; padding: 8px; border-radius: 4px; border: 1px solid #ccc;"></textarea>
-          </div>
-          <button type="submit" form="formReserva" <?php echo $tipo_inicial ? '' : 'disabled'; ?>
-                  style="width: 100%; margin-top: 20px; background: #102948; color: #fff; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Reservar ahora</button>
+     <section class="right-section">
+  <div class="card-box">
+    <h2>Tus datos y resumen</h2>
+    <span class="step-subtitle">Huésped: <strong><?php echo htmlspecialchars($_SESSION['nombre']); ?></strong></span>
+
+    <div class="summary-details">
+      <div class="detail-row">
+        <span>Estancia</span>
+        <span><?php echo $noches; ?> noche(s)</span>
+      </div>
+      <div class="detail-row">
+        <span>Fechas</span>
+        <span><?php echo fecha($entrada); ?> al <?php echo fecha($salida); ?></span>
+      </div>
+      <?php if ($tipo_inicial): ?>
+        <div class="detail-row">
+          <span>Habitación</span>
+          <span id="lblTipoSeleccionado"><?php echo htmlspecialchars($tipo_inicial); ?></span>
         </div>
-      </section>
+        <div class="summary-total">
+          <span>Total estimado</span>
+          <strong>$<span id="lblTotalCalculado"><?php echo number_format($noches * $precios[$tipo_inicial], 2); ?></span></strong>
+        </div>
+      <?php else: ?>
+        <p class="summary-empty">No hay habitaciones disponibles en estas fechas. Prueba con otras.</p>
+      <?php endif; ?>
+    </div>
+
+    <div class="input-group">
+      <label for="notas">Solicitudes especiales (opcional)</label>
+      <textarea id="notas" name="notas" form="formReserva" maxlength="255" placeholder="Ej. Cama extra..."></textarea>
+    </div>
+
+    <button type="submit" form="formReserva" class="modal-btn" <?php echo $tipo_inicial ? '' : 'disabled'; ?>>Reservar ahora</button>
+  </div>
+</section>
     <?php endif; ?>
   </main>
 
