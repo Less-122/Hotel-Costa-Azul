@@ -350,119 +350,6 @@ body {
   outline: none;
 }
 
-/* Tarjeta de Resumen */
-.summary-card {
-  background-color: #f4efe6;
-  border-radius: 8px;
-  padding: 16px;
-  margin: 20px 0;
-}
-
-.summary-title {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: #111d2e;
-  margin-bottom: 6px;
-}
-
-.summary-room-info {
-  font-size: 0.88rem;
-  color: #2b2b2b;
-  font-weight: 500;
-}
-
-.summary-dates {
-  font-size: 0.8rem;
-  color: #7a756c;
-  margin-bottom: 12px;
-}
-
-.summary-total-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-top: 1px solid #d4cebe;
-  padding-top: 10px;
-  font-weight: 600;
-}
-
-.total-price {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.5rem;
-  color: #111d2e;
-}
-
-.btn-reserve-now {
-  width: 100%;
-  padding: 14px;
-  background-color: #0f2540;
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.btn-reserve-now:hover {
-  background-color: #18355a;
-}
-
-.security-note {
-  text-align: center;
-  font-size: 0.72rem;
-  color: #7a756c;
-  margin-top: 12px;
-}
-
-.back-link {
-  display: block;
-  text-align: center;
-  margin-top: 15px;
-  font-size: 0.85rem;
-  color: #1a293e;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.back-link:hover {
-  text-decoration: underline;
-}
-
-/* Responsividad para móviles */
-@media (max-width: 900px) {
-  .main-container {
-    flex-direction: column;
-  }
-}
-
-/* --- Estilos para el Modal Flotante --- */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100vh;
-  background-color: rgba(15, 37, 64, 0.5); /* Fondo semitransparente oscuro */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  backdrop-filter: blur(2px);
-}
-
-.modal-content {
-  background-color: #f4efe6;
-  border: 1px solid #d4cebe;
-  border-radius: 16px;
-  padding: 40px 30px;
-  width: 90%;
-  max-width: 450px;
-  text-align: center;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-  animation: modalScale 0.25s ease-in-out;
-}
 
 @keyframes modalScale {
   from {
@@ -665,4 +552,117 @@ body {
 
 .btn-ready-action:hover {
   background-color: #18355a;
+}
+/* ===== Recuadro: Tus datos y resumen ===== */
+/* ===== Resumen de la reservación ===== */
+.right-section {
+  align-self: flex-start;
+  position: sticky;
+  top: 20px;
+}
+
+.card-box h2 {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2dac9;
+  margin-bottom: 12px;
+}
+
+.summary-details {
+  background-color: #faf8f5;
+  border: 1px solid #d4cebe;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.88rem;
+}
+
+.summary-details .detail-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.summary-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #d4cebe;
+  padding-top: 12px;
+  color: #35522b;
+  font-weight: 600;
+}
+
+.summary-total strong {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem;
+}
+
+.summary-empty {
+  color: #a94442;
+  font-size: 0.85rem;
+}
+
+.input-group textarea:focus {
+  border-color: #3c5630;
+  box-shadow: 0 0 0 3px rgba(60, 86, 48, 0.12);
+}
+
+.modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.room-card:hover {
+  border-color: #3c5630;
+}
+/* ===== Usuario y regreso al inicio (navbar) ===== */
+.nav-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #1d3a5f;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.user-info strong {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.user-info span {
+  font-size: 0.72rem;
+  color: #a8b2c1;
+}
+
+.btn-home {
+  color: #ffffff;
+  font-size: 1.05rem;
+  text-decoration: none;
+  margin-left: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.btn-home:hover {
+  background-color: #dadfe6;
 }
