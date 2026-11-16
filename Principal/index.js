@@ -1,25 +1,17 @@
-let currentSlide = 0;
 const slides = document.querySelectorAll('.carousel-slide');
+let currentSlide = 0;
 
-// Función para cambiar las diapositivas del carrusel automáticamente o mediante botones
 function moveSlide(direction) {
+  if (slides.length < 2) return;
   slides[currentSlide].classList.remove('active');
-  
   currentSlide = (currentSlide + direction + slides.length) % slides.length;
-  
   slides[currentSlide].classList.add('active');
 }
 
-// Rotación automática del carrusel cada 5 segundos
-setInterval(() => {
-  moveSlide(1);
-}, 5000);
-
-// Funciones para abrir y cerrar el Modal de Políticas del Hotel
-function openPolicyModal() {
-  document.getElementById('policyModal').style.display = 'flex';
+// Rotación automática cada 5 segundos
+if (slides.length > 1) {
+  setInterval(() => moveSlide(1), 5000);
 }
 
-function closePolicyModal() {
-  document.getElementById('policyModal').style.display = 'none';
-}
+function openPolicyModal()  { document.getElementById('policyModal').style.display = 'flex'; }
+function closePolicyModal() { document.getElementById('policyModal').style.display = 'none'; }

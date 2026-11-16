@@ -174,9 +174,5 @@ $rol_usuario      = rolActual();
   </div>
 
   <script src="index.js"></script>
-  <script>
-    function openPolicyModal()  { document.getElementById('policyModal').style.display = 'flex'; }
-    function closePolicyModal() { document.getElementById('policyModal').style.display = 'none'; }
-  </script>
 </body>
 </html>
