@@ -11,25 +11,40 @@ $codigo     = trim($_REQUEST['codigo'] ?? '');
 $mensaje_exito = isset($_GET['ok']) ? "La reservación ha sido cancelada correctamente." : '';
 $mensaje_error = '';
 
-// 1. Obtener la política de cancelación vigente (ej. RN-01 o la activa en la BD)
-$politica_cancelacion = null;
-try {
-    $stmt_pol = $conexion->prepare("SELECT descripcion, dias_anticipacion FROM politica WHERE tipo = 'Cancelacion' AND vigente = 1 LIMIT 1");
-    $stmt_pol->execute();
-    $politica_cancelacion = $stmt_pol->fetch(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Error al consultar política de cancelación: " . $e->getMessage());
+/**
+ * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
+ * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
+ */
+function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
+    if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs)\b/iu', $descripcion, $m)) {
+        return (int) $m[1];
+    }
+    if (preg_match('/(\d+)\s*(?:d[ií]a|d[ií]as)\b/iu', $descripcion, $m)) {
+        return ((int) $m[1]) * 24;
+    }
+    return $horas_defecto;
 }
 
-// Valores por defecto si no hay política registrada (ej. mínimo 3 días antes)
-$dias_limite_politica = $politica_cancelacion['dias_anticipacion'] ?? 3;
-$texto_politica = $politica_cancelacion['descripcion'] ?? "Se permite cancelar sin penalización hasta {$dias_limite_politica} días antes de la fecha de entrada.";
+// 1. Obtener la política de cancelación vigente de la BD como respaldo general
+$texto_politica = "Se permite cancelar sin penalización hasta 72 horas antes de la fecha de entrada.";
+try {
+    $stmt_pol = $conexion->query(
+        "SELECT descripcion FROM politica_cancelacion WHERE vigente = 1 ORDER BY id_politica DESC LIMIT 1"
+    );
+    $pol_vigente = $stmt_pol ? $stmt_pol->fetch(PDO::FETCH_ASSOC) : false;
+    if ($pol_vigente && !empty($pol_vigente['descripcion'])) {
+        $texto_politica = $pol_vigente['descripcion'];
+    }
+} catch (PDOException $e) {
+    error_log("Error al consultar política de cancelación vigente: " . $e->getMessage());
+}
+
+$horas_limite_politica = obtenerHorasAnticipacion($texto_politica, 72);
 
 // BUSCAR RESERVACIÓN Y DATOS FINANCIEROS
-$reservacion = null;
-$costo_total = 0.0;
-$total_pagado = 0.0;
-$dias_restantes = 0;
+$reservacion    = null;
+$costo_total    = 0.0;
+$total_pagado   = 0.0;
 $puede_cancelar = false;
 $motivo_bloqueo = '';
 
@@ -37,15 +52,23 @@ if ($codigo !== '') {
     try {
         $stmt = $conexion->prepare(
             "SELECT r.id_reservacion, r.numero_confirmacion, r.estado, r.fecha_entrada, r.fecha_salida,
-                    r.numero_habitacion, t.precio_noche
+                    r.numero_habitacion, t.precio_noche,
+                    p.descripcion AS politica_descripcion
              FROM reservacion r
              JOIN tarifa t ON r.id_tarifa = t.id_tarifa
+             LEFT JOIN politica_cancelacion p ON r.id_politica = p.id_politica
              WHERE r.numero_confirmacion = ? AND r.id_huesped = ?"
         );
         $stmt->execute([$codigo, $id_huesped]);
         $reservacion = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($reservacion) {
+            // Si la reservación tiene su política asociada, usamos esa descripción y su límite
+            if (!empty($reservacion['politica_descripcion'])) {
+                $texto_politica = $reservacion['politica_descripcion'];
+                $horas_limite_politica = obtenerHorasAnticipacion($texto_politica, 72);
+            }
+
             // Calcular costo total
             $noches = max(1, (strtotime($reservacion['fecha_salida']) - strtotime($reservacion['fecha_entrada'])) / 86400);
             $costo_total = round($noches * (float) $reservacion['precio_noche'], 2);
@@ -55,19 +78,23 @@ if ($codigo !== '') {
             $stmt_pago->execute([$reservacion['id_reservacion']]);
             $total_pagado = round((float) $stmt_pago->fetchColumn(), 2);
 
-            // Calcular días restantes para la entrada
-            $hoy = new DateTime(date('Y-m-d'));
-            $fecha_entrada_dt = new DateTime($reservacion['fecha_entrada']);
-            $diferencia = $hoy->diff($fecha_entrada_dt);
-            $dias_restantes = (int) $diferencia->format('%r%a'); // Negativo si ya pasó o inició
+            // Calcular horas restantes hasta el inicio del día de entrada
+            $ahora = new DateTime();
+            $fecha_entrada_dt = new DateTime($reservacion['fecha_entrada'] . ' 00:00:00');
+            $segundos_restantes = $fecha_entrada_dt->getTimestamp() - $ahora->getTimestamp();
+            $horas_restantes = $segundos_restantes / 3600;
+
+            $etiqueta_plazo = ($horas_limite_politica % 24 === 0 && $horas_limite_politica >= 24)
+                ? ($horas_limite_politica / 24) . " día(s)"
+                : $horas_limite_politica . " hora(s)";
 
             // Reglas de validación y bloqueo
             if ($reservacion['estado'] !== 'Activa') {
                 $motivo_bloqueo = "La reservación ya se encuentra " . strtolower($reservacion['estado']) . ".";
-            } elseif ($dias_restantes < 0) {
+            } elseif ($segundos_restantes <= 0) {
                 $motivo_bloqueo = "No se puede cancelar: la fecha de entrada ya pasó o la reservación ya dio inicio.";
-            } elseif ($dias_restantes < $dias_limite_politica) {
-                $motivo_bloqueo = "No se puede cancelar en línea: el plazo límite según la política ({$dias_limite_politica} días antes) ha expirado.";
+            } elseif ($horas_restantes < $horas_limite_politica) {
+                $motivo_bloqueo = "No se puede cancelar en línea: el plazo límite según la política ({$etiqueta_plazo} antes) ha expirado.";
             } else {
                 $puede_cancelar = true;
             }

@@ -10,6 +10,39 @@ function fecha(string $f, bool $con_anio = false): string {
     return date('d', $t) . ' ' . $meses[date('n', $t) - 1] . ($con_anio ? ' ' . date('Y', $t) : '');
 }
 
+/**
+ * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
+ * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
+ */
+function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
+    if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs)\b/iu', $descripcion, $m)) {
+        return (int) $m[1];
+    }
+    if (preg_match('/(\d+)\s*(?:d[ií]a|d[ií]as)\b/iu', $descripcion, $m)) {
+        return ((int) $m[1]) * 24;
+    }
+    return $horas_defecto;
+}
+
+/**
+ * Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,
+ * con cada palabra iniciando en mayúscula y continuando en minúsculas.
+ */
+function validarNombreFormato(string $nombre): bool {
+    if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
+        return false;
+    }
+
+    $palabras = explode(' ', $nombre);
+    foreach ($palabras as $palabra) {
+        if (!preg_match('/^\p{Lu}\p{Ll}+\.?$/u', $palabra) && !preg_match('/^\p{Lu}\.$/u', $palabra)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 $id_usuario    = (int) $_SESSION['id_usuario'];
 $mensaje_exito = '';
 $mensaje_error = '';
@@ -21,29 +54,19 @@ if (($_GET['ok'] ?? '') === '1' && preg_match('/^[A-Z0-9]{5}$/', $_GET['codigo']
     $mensaje_exito = "Reservación cancelada correctamente.";
 }
 
-// Política de cancelación vigente (RN-01)
-$dias_anticipacion_pol = 3;
-$desc_politica_pol     = 'Se permite cancelar sin penalización hasta 3 días antes de la fecha de entrada.';
+// Política de cancelación vigente (RN-01) desde politica_cancelacion
+$desc_politica_pol = 'Se permite cancelar sin penalización hasta 72 horas antes de la fecha de entrada.';
 try {
-    $st_pol = $conexion->query("SELECT descripcion, dias_anticipacion FROM politica WHERE tipo = 'Cancelacion' AND vigente = 1 LIMIT 1");
-    if ($st_pol && ($pol = $st_pol->fetch(PDO::FETCH_ASSOC))) {
-        if (!empty($pol['descripcion'])) {
-            $desc_politica_pol = $pol['descripcion'];
-        }
-        if (isset($pol['dias_anticipacion']) && is_numeric($pol['dias_anticipacion'])) {
-            $dias_anticipacion_pol = (int) $pol['dias_anticipacion'];
-        }
+    $st_pol = $conexion->query(
+        "SELECT descripcion FROM politica_cancelacion WHERE vigente = 1 ORDER BY id_politica DESC LIMIT 1"
+    );
+    if ($st_pol && ($pol = $st_pol->fetch(PDO::FETCH_ASSOC)) && !empty($pol['descripcion'])) {
+        $desc_politica_pol = $pol['descripcion'];
     }
 } catch (PDOException $e) {
-    try {
-        $st_pol = $conexion->query("SELECT descripcion FROM politica WHERE tipo = 'Cancelacion' AND vigente = 1 LIMIT 1");
-        if ($st_pol && ($pol = $st_pol->fetch(PDO::FETCH_ASSOC)) && !empty($pol['descripcion'])) {
-            $desc_politica_pol = $pol['descripcion'];
-        }
-    } catch (PDOException $e2) {
-        error_log('Recepción - política cancelación: ' . $e2->getMessage());
-    }
+    error_log('Recepción - política cancelación: ' . $e->getMessage());
 }
+$horas_anticipacion_pol = obtenerHorasAnticipacion($desc_politica_pol, 72);
 
 $tipos_habitacion = $conexion->query("SELECT DISTINCT tipo_habitacion FROM habitacion ORDER BY tipo_habitacion")
                              ->fetchAll(PDO::FETCH_COLUMN);
@@ -99,15 +122,17 @@ if (isset($_GET['buscar_disponibilidad'])) {
 
 $accion = ($_SERVER['REQUEST_METHOD'] === 'POST') ? ($_POST['accion'] ?? '') : '';
 
-// 1. Cancelar una reservación (RF-09) aplicando la política vigente (RN-01) y validando pagos y fechas.
+// 1. Cancelar una reservación (RF-09) aplicando la política correspondiente (RN-01) y validando fechas.
 if ($accion === 'cancelar_reservacion') {
     $id_reservacion_cancelar = (int) ($_POST['id_reservacion'] ?? 0);
 
     try {
         $st_res = $conexion->prepare("
-            SELECT id_reservacion, fecha_entrada, estado
-            FROM reservacion
-            WHERE id_reservacion = ?
+            SELECT r.id_reservacion, r.fecha_entrada, r.estado,
+                   p.descripcion AS politica_descripcion
+            FROM reservacion r
+            LEFT JOIN politica_cancelacion p ON r.id_politica = p.id_politica
+            WHERE r.id_reservacion = ?
         ");
         $st_res->execute([$id_reservacion_cancelar]);
         $info_res = $st_res->fetch(PDO::FETCH_ASSOC);
@@ -115,15 +140,24 @@ if ($accion === 'cancelar_reservacion') {
         if (!$info_res || $info_res['estado'] !== 'Activa') {
             $mensaje_error = "No se pudo cancelar: la reservación no existe o ya no está activa.";
         } else {
-            $f_hoy = new DateTime($hoy);
-            $f_entrada = new DateTime($info_res['fecha_entrada']);
-            $diferencia = $f_hoy->diff($f_entrada);
-            $dias_restantes = (int) $diferencia->format('%r%a');
+            $desc_res = !empty($info_res['politica_descripcion'])
+                ? $info_res['politica_descripcion']
+                : $desc_politica_pol;
+            $horas_limite_res = obtenerHorasAnticipacion($desc_res, 72);
 
-            if ($dias_restantes < 0) {
+            $ahora = new DateTime();
+            $fecha_entrada_dt = new DateTime($info_res['fecha_entrada'] . ' 00:00:00');
+            $segundos_restantes = $fecha_entrada_dt->getTimestamp() - $ahora->getTimestamp();
+            $horas_restantes = $segundos_restantes / 3600;
+
+            $etiqueta_plazo = ($horas_limite_res % 24 === 0 && $horas_limite_res >= 24)
+                ? ($horas_limite_res / 24) . " día(s)"
+                : $horas_limite_res . " hora(s)";
+
+            if ($segundos_restantes <= 0) {
                 $mensaje_error = "No se puede cancelar: la fecha de entrada ya pasó o la reservación ya dio inicio.";
-            } elseif ($dias_restantes < $dias_anticipacion_pol) {
-                $mensaje_error = "No se puede cancelar: el plazo límite según la política ({$dias_anticipacion_pol} días antes) ha expirado.";
+            } elseif ($horas_restantes < $horas_limite_res) {
+                $mensaje_error = "No se puede cancelar: el plazo límite según la política ({$etiqueta_plazo} antes) ha expirado.";
             } else {
                 $st = $conexion->prepare(
                     "UPDATE reservacion
@@ -161,6 +195,8 @@ if ($accion === 'nueva_reservacion') {
         $mensaje_error = "Por favor completa todos los campos obligatorios.";
     } elseif (mb_strlen($form['nombre_huesped']) > 100) {
         $mensaje_error = "El nombre es demasiado largo (máximo 100 caracteres).";
+    } elseif (!validarNombreFormato($form['nombre_huesped'])) {
+        $mensaje_error = "El nombre solo puede contener letras y puntos (sin números), iniciando cada palabra con mayúscula y siguiendo con minúsculas.";
     } elseif (!preg_match('/^\d{10}$/', $form['telefono'])) {
         $mensaje_error = "El teléfono debe tener 10 dígitos.";
     } elseif ($form['correo'] !== '' && (!filter_var($form['correo'], FILTER_VALIDATE_EMAIL) || strlen($form['correo']) > 80)) {
@@ -225,7 +261,7 @@ if ($accion === 'nueva_reservacion') {
             $st = $conexion->prepare("SELECT id_tarifa FROM tarifa WHERE tipo_habitacion = ? AND vigente = 1 LIMIT 1");
             $st->execute([$form['tipo_habitacion']]);
             $id_tarifa   = $st->fetchColumn();
-            $id_politica = $conexion->query("SELECT id_politica FROM politica_cancelacion WHERE vigente = 1 LIMIT 1")->fetchColumn();
+            $id_politica = $conexion->query("SELECT id_politica FROM politica_cancelacion WHERE vigente = 1 ORDER BY id_politica DESC LIMIT 1")->fetchColumn();
             if ($id_tarifa === false || $id_politica === false) {
                 throw new RuntimeException("No hay tarifa o política de cancelación vigente. Avisa al administrador.");
             }
@@ -273,10 +309,12 @@ $reservaciones = $conexion->query("
            r.fecha_entrada, r.fecha_salida,
            h.tipo_habitacion, r.numero_habitacion,
            r.canal, r.estado, r.notas,
-           COALESCE((SELECT SUM(monto) FROM pago WHERE id_reservacion = r.id_reservacion), 0) AS total_pagado
+           COALESCE((SELECT SUM(monto) FROM pago WHERE id_reservacion = r.id_reservacion), 0) AS total_pagado,
+           p.descripcion         AS politica_descripcion
     FROM reservacion r
     JOIN usuario u    ON u.id_usuario = r.id_huesped
     JOIN habitacion h ON h.numero_habitacion = r.numero_habitacion
+    LEFT JOIN politica_cancelacion p ON r.id_politica = p.id_politica
     ORDER BY r.fecha_registro DESC, r.id_reservacion DESC
     LIMIT 50
 ")->fetchAll(PDO::FETCH_ASSOC);
@@ -375,6 +413,7 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
                 $estado_class = ($estado_raw === 'cancelada') ? 'cancelled' : (($estado_raw === 'finalizada') ? 'finalized' : 'active');
                 $monto_pagado = (float) $res['total_pagado'];
                 $nota_texto   = $res['notas'] ?? '';
+                $desc_fila    = !empty($res['politica_descripcion']) ? $res['politica_descripcion'] : $desc_politica_pol;
               ?>
               <tr class="res-row" data-estado="<?php echo htmlspecialchars($estado_raw, ENT_QUOTES, 'UTF-8'); ?>">
                 <td><b><?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?></b></td>
@@ -386,7 +425,7 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
                 <td><span class="status-badge <?php echo $estado_class; ?>"><?php echo htmlspecialchars($res['estado'], ENT_QUOTES, 'UTF-8'); ?></span></td>
                 <td>
                   <?php if (!empty($nota_texto)): ?>
-                    <button type="button" class="btn-view-note" onclick="mostrarNotaModal('<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', '<?php echo htmlspecialchars(json_encode($nota_texto), ENT_QUOTES, 'UTF-8'); ?>')" style="background: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #334155;" title="Ver nota">
+                    <button type="button" class="btn-view-note" onclick="mostrarNotaModal('<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo htmlspecialchars(json_encode($nota_texto), ENT_QUOTES, 'UTF-8'); ?>)" style="background: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #334155;" title="Ver nota">
                       <i class="fa-regular fa-note-sticky" style="color: #d97706;"></i> Ver nota
                     </button>
                   <?php else: ?>
@@ -395,7 +434,7 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
                 </td>
                 <td>
                   <?php if ($estado_raw === 'activa'): ?>
-                    <form method="POST" onsubmit="return confirmarCancelacion(this, '<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo $monto_pagado; ?>, <?php echo htmlspecialchars(json_encode($desc_politica_pol), ENT_QUOTES, 'UTF-8'); ?>);">
+                    <form method="POST" onsubmit="return confirmarCancelacion(this, '<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo $monto_pagado; ?>, <?php echo htmlspecialchars(json_encode($desc_fila), ENT_QUOTES, 'UTF-8'); ?>);">
                       <input type="hidden" name="accion" value="cancelar_reservacion">
                       <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
                       <button type="submit" class="btn-cancel-row">Cancelar</button>
@@ -492,7 +531,9 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
 
           <div class="input-group">
             <label>Nombre del huésped</label>
-            <input type="text" name="nombre_huesped" maxlength="100" value="<?php echo htmlspecialchars($form['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Nombre completo" required>
+            <input type="text" name="nombre_huesped" maxlength="100"
+                   title="Solo letras y puntos (sin números). Cada palabra debe iniciar con mayúscula y seguir en minúsculas."
+                   value="<?php echo htmlspecialchars($form['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Nombre completo" required>
           </div>
 
           <div class="input-group">
