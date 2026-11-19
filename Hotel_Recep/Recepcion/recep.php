@@ -225,7 +225,7 @@ if ($accion === 'nueva_reservacion') {
             $st = $conexion->prepare("SELECT id_tarifa FROM tarifa WHERE tipo_habitacion = ? AND vigente = 1 LIMIT 1");
             $st->execute([$form['tipo_habitacion']]);
             $id_tarifa   = $st->fetchColumn();
-            $id_politica = $conexion->query("SELECT id_politica FROM politica WHERE vigente = 1 LIMIT 1")->fetchColumn();
+            $id_politica = $conexion->query("SELECT id_politica FROM politica_cancelacion WHERE vigente = 1 LIMIT 1")->fetchColumn();
             if ($id_tarifa === false || $id_politica === false) {
                 throw new RuntimeException("No hay tarifa o política de cancelación vigente. Avisa al administrador.");
             }
