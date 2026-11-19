@@ -10,7 +10,6 @@ $avisos = [
     'editado'   => 'Usuario actualizado correctamente.',
     'eliminado' => 'Usuario eliminado correctamente.',
 ];
-
 $mensaje_exito = $avisos[$_GET['ok'] ?? ''] ?? '';
 $mensaje_error = '';
 
