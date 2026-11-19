@@ -8,6 +8,25 @@ if (isset($_SESSION['id_usuario'])) {
     exit();
 }
 
+/**
+ * Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,
+ * con cada palabra iniciando en mayúscula y continuando en minúsculas.
+ */
+function validarNombreFormato(string $nombre): bool {
+    if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
+        return false;
+    }
+
+    $palabras = explode(' ', $nombre);
+    foreach ($palabras as $palabra) {
+        if (!preg_match('/^\p{Lu}\p{Ll}+\.?$/u', $palabra) && !preg_match('/^\p{Lu}\.$/u', $palabra)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 $error  = '';
 $valores = ['nombre' => '', 'telefono' => '', 'correo' => ''];
 
@@ -22,6 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Completa todos los campos.';
     } elseif (mb_strlen($valores['nombre']) > 100) {
         $error = 'El nombre es demasiado largo (máximo 100 caracteres).';
+    } elseif (!validarNombreFormato($valores['nombre'])) {
+        $error = 'El nombre solo puede contener letras y puntos (sin números), iniciando cada palabra con mayúscula y siguiendo con minúsculas (ej. María López Pérez).';
     } elseif (!preg_match('/^\d{10}$/', $valores['telefono'])) {
         $error = 'El teléfono debe tener 10 dígitos.';
     } elseif (!filter_var($valores['correo'], FILTER_VALIDATE_EMAIL) || strlen($valores['correo']) > 80) {
@@ -85,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 
   <div class="register-container">
-    
+
     <!-- Lado Izquierdo: Imagen -->
     <div class="hero-section">
       <div class="hero-content">
@@ -96,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Lado Derecho: Formulario -->
     <div class="form-section">
-      
+
       <div class="header-brand">
         <h2>Hotel Costa Azul</h2>
       </div>
@@ -109,30 +130,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <!-- Alertas de error -->
       <?php if ($error !== ''): ?>
         <div class="alert alert-danger" style="color: #d9534f; background-color: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; font-weight: 500;">
-          <?php echo htmlspecialchars($error); ?>
+          <?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?>
         </div>
       <?php endif; ?>
 
       <form id="registerForm" class="register-form" method="POST" action="" onsubmit="return validarContrasenas();">
-        
+
         <!-- Nombre completo -->
         <div class="input-group">
           <label for="fullname">Nombre completo</label>
-          <input type="text" id="fullname" name="nombre" maxlength="100" value="<?php echo htmlspecialchars($valores['nombre']); ?>" placeholder="Ej. María López Pérez" required>
+          <input type="text" id="fullname" name="nombre" maxlength="100"
+                 title="Solo letras y puntos (sin números). Cada palabra debe iniciar con mayúscula y seguir en minúsculas."
+                 value="<?php echo htmlspecialchars($valores['nombre'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Ej. María López Pérez" required>
         </div>
 
         <!-- Fila: Teléfono -->
         <div class="form-row">
           <div class="input-group" style="width: 100%;">
             <label for="phone">Teléfono (10 dígitos)</label>
-            <input type="tel" id="phone" name="telefono" placeholder="7771234567" pattern="[0-9]{10}" maxlength="10" value="<?php echo htmlspecialchars($valores['telefono']); ?>" required>
+            <input type="tel" id="phone" name="telefono" placeholder="7771234567" pattern="[0-9]{10}" maxlength="10" value="<?php echo htmlspecialchars($valores['telefono'], ENT_QUOTES, 'UTF-8'); ?>" required>
           </div>
         </div>
 
         <!-- Correo electrónico -->
         <div class="input-group">
           <label for="email">Correo electrónico (para iniciar sesión)</label>
-          <input type="email" id="email" name="correo" maxlength="80" value="<?php echo htmlspecialchars($valores['correo']); ?>" placeholder="correo@ejemplo.com" required>
+          <input type="email" id="email" name="correo" maxlength="80" value="<?php echo htmlspecialchars($valores['correo'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="correo@ejemplo.com" required>
         </div>
 
         <!-- Fila: Contraseña + Confirmar contraseña -->

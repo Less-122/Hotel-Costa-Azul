@@ -12,9 +12,15 @@ $tipos = [
     'Doble'    => ['titulo' => 'Habitación doble',    'img' => 'https://images.unsplash.com/photo-1566665797739-1674de7a421a?q=80&w=600&auto=format&fit=crop'],
 ];
 
+const MAX_DIAS_ANTICIPACION = 365;
+const MAX_NOCHES_ESTANCIA   = 90;
+
 function fecha(string $f): string {
     $meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
     $t = strtotime($f);
+    if ($t === false) {
+        return $f;
+    }
     return date('d', $t) . ' ' . $meses[date('n', $t) - 1] . ' ' . date('Y', $t);
 }
 
@@ -25,12 +31,25 @@ function validarFechas(string $entrada, string $salida): string {
     if (!$e || !$s || $e->format('Y-m-d') !== $entrada || $s->format('Y-m-d') !== $salida) {
         return "Las fechas no son válidas.";
     }
-    if ($e < new DateTime('today')) {
+
+    $hoy_dt    = new DateTime('today');
+    $max_fecha = (clone $hoy_dt)->modify('+' . MAX_DIAS_ANTICIPACION . ' days');
+
+    if ($e < $hoy_dt) {
         return "La fecha de entrada no puede ser anterior a hoy.";
+    }
+    if ($e > $max_fecha || $s > $max_fecha) {
+        return "Solo puedes reservar con hasta " . MAX_DIAS_ANTICIPACION . " días de anticipación (máximo " . $max_fecha->format('Y-m-d') . ").";
     }
     if ($s <= $e) {
         return "La salida debe ser posterior a la entrada.";
     }
+
+    $noches_calc = (int) $e->diff($s)->days;
+    if ($noches_calc > MAX_NOCHES_ESTANCIA) {
+        return "La estancia máxima permitida es de " . MAX_NOCHES_ESTANCIA . " noches.";
+    }
+
     return '';
 }
 
@@ -54,20 +73,21 @@ function disponibilidad(PDO $conexion, string $entrada, string $salida): array {
     return $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 }
 
-// Fechas: se validan siempre en el servidor
+$hoy_str      = date('Y-m-d');
+$max_fecha_str = (new DateTime('today'))->modify('+' . MAX_DIAS_ANTICIPACION . ' days')->format('Y-m-d');
+
+// Fechas: se validan siempre en el servidor y se conserva lo escrito si hay error
 $src     = ($_SERVER['REQUEST_METHOD'] === 'POST') ? $_POST : $_GET;
-$entrada = $src['entrada'] ?? date('Y-m-d');
-$salida  = $src['salida']  ?? date('Y-m-d', strtotime('+2 days'));
+$entrada = trim((string) ($src['entrada'] ?? $hoy_str));
+$salida  = trim((string) ($src['salida']  ?? date('Y-m-d', strtotime('+2 days'))));
 
 $mensaje_error = validarFechas($entrada, $salida);
 $fechas_ok     = ($mensaje_error === '');
 
-if (!$fechas_ok) {
-    $entrada = date('Y-m-d');
-    $salida  = date('Y-m-d', strtotime('+1 day'));
+$noches = 0;
+if ($fechas_ok) {
+    $noches = (int) (new DateTime($entrada))->diff(new DateTime($salida))->days;
 }
-
-$noches = (new DateTime($entrada))->diff(new DateTime($salida))->days;
 
 // Tarifas vigentes: ['Sencilla' => ['id_tarifa' => .., 'precio_noche' => ..], ...]
 $tarifas = $conexion->query(
@@ -145,6 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $fechas_ok) {
                 exit;
             }
         } catch (PDOException $e) {
+            error_log('Reservar - crear: ' . $e->getMessage());
             $mensaje_error = "No se pudo completar la reservación.";
         }
 
@@ -174,22 +195,27 @@ if (isset($_GET['ok'])) {
     }
 }
 
-// Disponibilidad para las fechas elegidas
-$disponibles = $fechas_ok || $_SERVER['REQUEST_METHOD'] === 'GET'
-    ? disponibilidad($conexion, $entrada, $salida)
-    : [];
+// Disponibilidad solo si las fechas son válidas
+$disponibles = $fechas_ok ? disponibilidad($conexion, $entrada, $salida) : [];
 
 $precios      = [];
 $tipo_inicial = null;
-$preferido = $_GET['tipo'] ?? '';
+$preferido    = $_GET['tipo'] ?? '';
 foreach ($tipos as $t => $info) {
     if (!isset($tarifas[$t])) {
         continue;
     }
     $precios[$t] = (float) $tarifas[$t]['precio_noche'];
-    if (($disponibles[$t] ?? 0) > 0 && ($tipo_inicial === null || $t === $preferido)) {
+    if ($fechas_ok && ($disponibles[$t] ?? 0) > 0 && ($tipo_inicial === null || $t === $preferido)) {
         $tipo_inicial = $t;
     }
+}
+
+// Calcular min inicial de salida a partir de la entrada actual si tiene formato válido
+$min_salida_inicial = date('Y-m-d', strtotime('+1 day'));
+$dt_ent_check = DateTime::createFromFormat('!Y-m-d', $entrada);
+if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
+    $min_salida_inicial = (clone $dt_ent_check)->modify('+1 day')->format('Y-m-d');
 }
 ?>
 <!DOCTYPE html>
@@ -201,41 +227,41 @@ foreach ($tipos as $t => $info) {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="Reser.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
   <header class="navbar">
-  <div class="nav-brand">Hotel Costa Azul</div>
-  <nav class="nav-links">
-    <a href="Reser.php" class="active">Reservar</a>
-    <a href="../Pagar/pagar.php">Pagar</a>
-    <a href="../Cancelar/Cance.php">Cancelar reservación</a>
-  </nav>
-  <div class="nav-user">
-    <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
-    <div class="user-info">
-      <strong><?php echo htmlspecialchars($_SESSION['nombre']); ?></strong>
-      <span>Huésped</span>
+    <div class="nav-brand">Hotel Costa Azul</div>
+    <nav class="nav-links">
+      <a href="Reser.php" class="active">Reservar</a>
+      <a href="../Pagar/pagar.php">Pagar</a>
+      <a href="../Cancelar/Cance.php">Cancelar reservación</a>
+    </nav>
+    <div class="nav-user">
+      <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
+      <div class="user-info">
+        <strong><?php echo htmlspecialchars($_SESSION['nombre'], ENT_QUOTES, 'UTF-8'); ?></strong>
+        <span>Huésped</span>
+      </div>
+      <a href="../../Principal/index.php" class="btn-home" title="Volver al inicio">
+        <i class="fa-solid fa-house"></i>
+      </a>
     </div>
-    <a href="../../Principal/index.php" class="btn-home" title="Volver al inicio">
-      <i class="fa-solid fa-house"></i>
-    </a>
-  </div>
-</header>
+  </header>
   <main class="main-container">
     <?php if ($confirmada): ?>
       <div style="background: #fff; padding: 40px; border-radius: 8px; max-width: 600px; margin: 40px auto; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
         <div style="font-size: 50px; color: #667121; margin-bottom: 15px;"><i class="fa-solid fa-circle-check"></i></div>
         <h1 style="color: #102948; margin-bottom: 10px;">¡Reservación confirmada!</h1>
-        <p style="color: #666; margin-bottom: 25px;">Gracias, <?php echo htmlspecialchars($_SESSION['nombre']); ?>. Te esperamos en Costa Azul.</p>
+        <p style="color: #666; margin-bottom: 25px;">Gracias, <?php echo htmlspecialchars($_SESSION['nombre'], ENT_QUOTES, 'UTF-8'); ?>. Te esperamos en Costa Azul.</p>
         <div style="background: #f9f6f0; border: 1px dashed #102948; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
           <span style="font-size: 12px; text-transform: uppercase; color: #555; display: block; margin-bottom: 5px;">Tu número de confirmación</span>
-          <strong style="font-size: 28px; color: #102948; letter-spacing: 2px;"><?php echo htmlspecialchars($confirmada['numero_confirmacion']); ?></strong>
+          <strong style="font-size: 28px; color: #102948; letter-spacing: 2px;"><?php echo htmlspecialchars($confirmada['numero_confirmacion'], ENT_QUOTES, 'UTF-8'); ?></strong>
         </div>
         <p style="color: #555; margin-bottom: 5px;">
           <?php echo fecha($confirmada['fecha_entrada']); ?> → <?php echo fecha($confirmada['fecha_salida']); ?>
-          · Hab. <?php echo htmlspecialchars($confirmada['numero_habitacion']); ?> (<?php echo htmlspecialchars($confirmada['tipo_habitacion']); ?>)
+          · Hab. <?php echo htmlspecialchars($confirmada['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($confirmada['tipo_habitacion'], ENT_QUOTES, 'UTF-8'); ?>)
         </p>
         <p style="color: #102948; font-weight: 600; margin-bottom: 25px;">Total: $<?php echo number_format($confirmada['total'], 2); ?></p>
         <div style="display: flex; gap: 10px; justify-content: center;">
@@ -249,7 +275,7 @@ foreach ($tipos as $t => $info) {
 
         <?php if ($mensaje_error): ?>
           <div style="background: #f2dede; color: #a94442; padding: 12px; border-radius: 5px; margin-bottom: 15px; font-size: 14px;">
-            <i class="fa-solid fa-circle-exclamation"></i> <?php echo htmlspecialchars($mensaje_error); ?>
+            <i class="fa-solid fa-circle-exclamation"></i> <?php echo htmlspecialchars($mensaje_error, ENT_QUOTES, 'UTF-8'); ?>
           </div>
         <?php endif; ?>
 
@@ -258,14 +284,14 @@ foreach ($tipos as $t => $info) {
             <label for="entrada">Entrada</label>
             <div class="input-field">
               <i class="fa-regular fa-calendar"></i>
-              <input type="date" id="entrada" name="entrada" min="<?php echo date('Y-m-d'); ?>" value="<?php echo htmlspecialchars($entrada); ?>" required>
+              <input type="date" id="entrada" name="entrada" min="<?php echo htmlspecialchars($hoy_str, ENT_QUOTES, 'UTF-8'); ?>" max="<?php echo htmlspecialchars($max_fecha_str, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($entrada, ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
           </div>
           <div class="date-input-group">
             <label for="salida">Salida</label>
             <div class="input-field">
               <i class="fa-regular fa-calendar"></i>
-              <input type="date" id="salida" name="salida" min="<?php echo date('Y-m-d', strtotime('+1 day')); ?>" value="<?php echo htmlspecialchars($salida); ?>" required>
+              <input type="date" id="salida" name="salida" min="<?php echo htmlspecialchars($min_salida_inicial, ENT_QUOTES, 'UTF-8'); ?>" max="<?php echo htmlspecialchars($max_fecha_str, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($salida, ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
           </div>
           <button type="submit" class="btn-availability"><i class="fa-solid fa-magnifying-glass"></i> Buscar disponibilidad</button>
@@ -273,23 +299,25 @@ foreach ($tipos as $t => $info) {
 
         <div class="rooms-list">
           <form method="POST" id="formReserva">
-            <input type="hidden" name="entrada" value="<?php echo htmlspecialchars($entrada); ?>">
-            <input type="hidden" name="salida" value="<?php echo htmlspecialchars($salida); ?>">
-            <input type="hidden" name="tipo_habitacion" id="inputTipoHabitacion" value="<?php echo htmlspecialchars((string) $tipo_inicial); ?>">
+            <input type="hidden" name="entrada" value="<?php echo htmlspecialchars($entrada, ENT_QUOTES, 'UTF-8'); ?>">
+            <input type="hidden" name="salida" value="<?php echo htmlspecialchars($salida, ENT_QUOTES, 'UTF-8'); ?>">
+            <input type="hidden" name="tipo_habitacion" id="inputTipoHabitacion" value="<?php echo htmlspecialchars((string) $tipo_inicial, ENT_QUOTES, 'UTF-8'); ?>">
 
             <?php foreach ($precios as $tipo => $precio): ?>
-              <?php $libre = ($disponibles[$tipo] ?? 0) > 0; ?>
+              <?php $libre = $fechas_ok && (($disponibles[$tipo] ?? 0) > 0); ?>
               <div class="room-card <?php echo ($tipo === $tipo_inicial) ? 'selected' : ''; ?>"
-                   <?php echo $libre ? "onclick=\"seleccionarHabitacion('$tipo', this)\"" : 'style="opacity: .55; cursor: not-allowed;"'; ?>>
-                <img src="<?php echo $tipos[$tipo]['img']; ?>" alt="<?php echo htmlspecialchars($tipos[$tipo]['titulo']); ?>">
+                   <?php echo $libre ? "onclick=\"seleccionarHabitacion('" . htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8') . "', this)\"" : 'style="opacity: .55; cursor: not-allowed;"'; ?>>
+                <img src="<?php echo htmlspecialchars($tipos[$tipo]['img'], ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($tipos[$tipo]['titulo'], ENT_QUOTES, 'UTF-8'); ?>">
                 <div class="room-details">
-                  <h2><?php echo htmlspecialchars($tipos[$tipo]['titulo']); ?></h2>
-                  <?php if ($libre): ?>
+                  <h2><?php echo htmlspecialchars($tipos[$tipo]['titulo'], ENT_QUOTES, 'UTF-8'); ?></h2>
+                  <?php if (!$fechas_ok): ?>
+                    <span class="badge" style="background: #f1f5f9; color: #475569;">Corrige las fechas para consultar</span>
+                  <?php elseif ($libre): ?>
                     <span class="badge available">Disponible</span>
                   <?php else: ?>
                     <span class="badge" style="background: #f2dede; color: #a94442;">No disponible en estas fechas</span>
                   <?php endif; ?>
-                  <p><?php echo $noches; ?> noche(s) · $<?php echo number_format($precio, 2); ?> por noche</p>
+                  <p><?php echo $fechas_ok ? $noches . ' noche(s) · ' : ''; ?>$<?php echo number_format($precio, 2); ?> por noche</p>
                 </div>
               </div>
             <?php endforeach; ?>
@@ -297,55 +325,94 @@ foreach ($tipos as $t => $info) {
         </div>
       </section>
 
-     <section class="right-section">
-  <div class="card-box">
-    <h2>Tus datos y resumen</h2>
-    <span class="step-subtitle">Huésped: <strong><?php echo htmlspecialchars($_SESSION['nombre']); ?></strong></span>
+      <section class="right-section">
+        <div class="card-box">
+          <h2>Tus datos y resumen</h2>
+          <span class="step-subtitle">Huésped: <strong><?php echo htmlspecialchars($_SESSION['nombre'], ENT_QUOTES, 'UTF-8'); ?></strong></span>
 
-    <div class="summary-details">
-      <div class="detail-row">
-        <span>Estancia</span>
-        <span><?php echo $noches; ?> noche(s)</span>
-      </div>
-      <div class="detail-row">
-        <span>Fechas</span>
-        <span><?php echo fecha($entrada); ?> al <?php echo fecha($salida); ?></span>
-      </div>
-      <?php if ($tipo_inicial): ?>
-        <div class="detail-row">
-          <span>Habitación</span>
-          <span id="lblTipoSeleccionado"><?php echo htmlspecialchars($tipo_inicial); ?></span>
+          <div class="summary-details">
+            <?php if ($fechas_ok): ?>
+              <div class="detail-row">
+                <span>Estancia</span>
+                <span><?php echo $noches; ?> noche(s)</span>
+              </div>
+              <div class="detail-row">
+                <span>Fechas</span>
+                <span><?php echo fecha($entrada); ?> al <?php echo fecha($salida); ?></span>
+              </div>
+              <?php if ($tipo_inicial): ?>
+                <div class="detail-row">
+                  <span>Habitación</span>
+                  <span id="lblTipoSeleccionado"><?php echo htmlspecialchars($tipo_inicial, ENT_QUOTES, 'UTF-8'); ?></span>
+                </div>
+                <div class="summary-total">
+                  <span>Total estimado</span>
+                  <strong>$<span id="lblTotalCalculado"><?php echo number_format($noches * $precios[$tipo_inicial], 2); ?></span></strong>
+                </div>
+              <?php else: ?>
+                <p class="summary-empty">No hay habitaciones disponibles en estas fechas. Prueba con otras.</p>
+              <?php endif; ?>
+            <?php else: ?>
+              <p class="summary-empty">Verifica que las fechas de entrada y salida sean válidas para ver el resumen.</p>
+            <?php endif; ?>
+          </div>
+
+          <div class="input-group">
+            <label for="notas">Solicitudes especiales (opcional)</label>
+            <textarea id="notas" name="notas" form="formReserva" maxlength="255" placeholder="Ej. Cama extra..."></textarea>
+          </div>
+
+          <button type="submit" form="formReserva" class="modal-btn" <?php echo ($fechas_ok && $tipo_inicial) ? '' : 'disabled'; ?>>Reservar ahora</button>
         </div>
-        <div class="summary-total">
-          <span>Total estimado</span>
-          <strong>$<span id="lblTotalCalculado"><?php echo number_format($noches * $precios[$tipo_inicial], 2); ?></span></strong>
-        </div>
-      <?php else: ?>
-        <p class="summary-empty">No hay habitaciones disponibles en estas fechas. Prueba con otras.</p>
-      <?php endif; ?>
-    </div>
-
-    <div class="input-group">
-      <label for="notas">Solicitudes especiales (opcional)</label>
-      <textarea id="notas" name="notas" form="formReserva" maxlength="255" placeholder="Ej. Cama extra..."></textarea>
-    </div>
-
-    <button type="submit" form="formReserva" class="modal-btn" <?php echo $tipo_inicial ? '' : 'disabled'; ?>>Reservar ahora</button>
-  </div>
-</section>
+      </section>
     <?php endif; ?>
   </main>
 
   <script>
     const precios = <?php echo json_encode($precios); ?>;
     const noches  = <?php echo (int) $noches; ?>;
+    const maxFecha = <?php echo json_encode($max_fecha_str); ?>;
+
+    const inputEntrada = document.getElementById('entrada');
+    const inputSalida  = document.getElementById('salida');
+
+    function sumarDiasISO(fechaISO, dias) {
+      const partes = fechaISO.split('-');
+      if (partes.length !== 3) return null;
+      const d = new Date(Date.UTC(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]) + dias));
+      if (Number.isNaN(d.getTime())) return null;
+      return d.toISOString().slice(0, 10);
+    }
+
+    function actualizarMinSalida() {
+      if (!inputEntrada || !inputSalida || !inputEntrada.value) return;
+      const minSal = sumarDiasISO(inputEntrada.value, 1);
+      if (!minSal) return;
+
+      inputSalida.min = minSal;
+      if (inputSalida.max && inputSalida.min > inputSalida.max) {
+        inputSalida.min = inputSalida.max;
+      }
+      if (inputSalida.value && inputSalida.value < inputSalida.min) {
+        inputSalida.value = inputSalida.min;
+      }
+    }
+
+    if (inputEntrada && inputSalida) {
+      actualizarMinSalida();
+      inputEntrada.addEventListener('change', actualizarMinSalida);
+    }
 
     function seleccionarHabitacion(tipo, card) {
       document.getElementById('inputTipoHabitacion').value = tipo;
       document.querySelectorAll('.room-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
-      document.getElementById('lblTipoSeleccionado').innerText = tipo;
-      document.getElementById('lblTotalCalculado').innerText = (precios[tipo] * noches).toFixed(2);
+      const lblTipo = document.getElementById('lblTipoSeleccionado');
+      const lblTot  = document.getElementById('lblTotalCalculado');
+      if (lblTipo) lblTipo.innerText = tipo;
+      if (lblTot && precios[tipo] !== undefined) {
+        lblTot.innerText = (precios[tipo] * noches).toFixed(2);
+      }
     }
   </script>
 </body>

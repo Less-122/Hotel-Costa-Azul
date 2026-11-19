@@ -42,10 +42,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actua
             if ((int) $existe->fetchColumn() === 0) {
                 $mensaje_error = "La habitación no existe.";
             } else {
-                $conexion->prepare("UPDATE habitacion SET estado_limpieza = ?, disponible = ? WHERE numero_habitacion = ?")
-                         ->execute([$limpieza, $disponible, $numero]);
-                header("Location: hab.php?ok=1&hab=" . urlencode($numero) . ($forzada_mant ? "&mant=1" : ""));
-                exit();
+                // RN-03: Antes de cambiar el estado a Mantenimiento u Ocupada/No disponible, verificar si tiene reservaciones activas vigentes
+                if ($limpieza === 'Mantenimiento' || $disp === 'Ocupada') {
+                    $hoy_fecha = date('Y-m-d');
+                    $st_check = $conexion->prepare("
+                        SELECT COUNT(*) FROM reservacion 
+                        WHERE numero_habitacion = ? 
+                          AND estado = 'Activa' 
+                          AND fecha_salida >= ?
+                    ");
+                    $st_check->execute([$numero, $hoy_fecha]);
+                    $reservaciones_activas = (int) $st_check->fetchColumn();
+
+                    if ($reservaciones_activas > 0) {
+                        $mensaje_error = "No se puede cambiar el estado a Mantenimiento u Ocupada: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) asignada(s) (RN-03).";
+                    }
+                }
+
+                if (empty($mensaje_error)) {
+                    $conexion->prepare("UPDATE habitacion SET estado_limpieza = ?, disponible = ? WHERE numero_habitacion = ?")
+                             ->execute([$limpieza, $disponible, $numero]);
+                    header("Location: hab.php?ok=1&hab=" . urlencode($numero) . ($forzada_mant ? "&mant=1" : ""));
+                    exit();
+                }
             }
         } catch (PDOException $e) {
             error_log('Recepción - actualizar habitación: ' . $e->getMessage());
@@ -115,8 +134,8 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
     <div class="user-profile">
       <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
       <div class="user-info">
-        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario); ?></span>
-        <span class="user-role"><?php echo htmlspecialchars($rol_usuario); ?></span>
+        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario, ENT_QUOTES, 'UTF-8'); ?></span>
+        <span class="user-role"><?php echo htmlspecialchars($rol_usuario, ENT_QUOTES, 'UTF-8'); ?></span>
       </div>
       <a href="../../config/logout.php" title="Cerrar sesión" style="margin-left: 14px; color: inherit;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
@@ -134,10 +153,10 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       </div>
 
       <?php if (!empty($mensaje_exito)): ?>
-          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold;"><?php echo $mensaje_exito; ?></div>
+          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_exito, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
       <?php if (!empty($mensaje_error)): ?>
-          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold;"><?php echo $mensaje_error; ?></div>
+          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_error, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
 
       <!-- Filtros de Pestañas -->
@@ -185,11 +204,11 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
                   else { $tags[] = 'ocupadas'; }
                   if (strtolower($limpieza) === 'sucia') { $tags[] = 'sucias'; }
                 ?>
-                <tr class="room-row <?php echo $is_selected; ?>" data-room="<?php echo htmlspecialchars($num, ENT_QUOTES); ?>" data-type="<?php echo htmlspecialchars($tipo, ENT_QUOTES); ?>" data-clean="<?php echo htmlspecialchars($limpieza, ENT_QUOTES); ?>" data-disp="<?php echo $disp; ?>" data-tags="<?php echo implode(' ', $tags); ?>" onclick="seleccionarHabitacion(this)">
-                  <td><b><?php echo htmlspecialchars($num); ?></b></td>
-                  <td><?php echo htmlspecialchars($tipo); ?></td>
-                  <td><span class="badge <?php echo $badge_clean_class; ?>"><?php echo htmlspecialchars($limpieza); ?></span></td>
-                  <td><span class="badge <?php echo $badge_disp_class; ?>"><?php echo $disp_texto; ?></span></td>
+                <tr class="room-row <?php echo $is_selected; ?>" data-room="<?php echo htmlspecialchars($num, ENT_QUOTES, 'UTF-8'); ?>" data-type="<?php echo htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8'); ?>" data-clean="<?php echo htmlspecialchars($limpieza, ENT_QUOTES, 'UTF-8'); ?>" data-disp="<?php echo htmlspecialchars($disp, ENT_QUOTES, 'UTF-8'); ?>" data-tags="<?php echo htmlspecialchars(implode(' ', $tags), ENT_QUOTES, 'UTF-8'); ?>" onclick="seleccionarHabitacion(this)">
+                  <td><b><?php echo htmlspecialchars($num, ENT_QUOTES, 'UTF-8'); ?></b></td>
+                  <td><?php echo htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8'); ?></td>
+                  <td><span class="badge <?php echo $badge_clean_class; ?>"><?php echo htmlspecialchars($limpieza, ENT_QUOTES, 'UTF-8'); ?></span></td>
+                  <td><span class="badge <?php echo $badge_disp_class; ?>"><?php echo htmlspecialchars($disp_texto, ENT_QUOTES, 'UTF-8'); ?></span></td>
                 </tr>
               <?php endforeach; ?>
             <?php else: ?>
@@ -233,13 +252,13 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       <div class="room-edit-box">
         
         <div class="edit-header">
-          <h2 id="selectedRoomTitle">Habitación <?php echo htmlspecialchars($habitaciones[0]['numero'] ?? ''); ?></h2>
-          <span id="selectedRoomType" class="room-type-subtitle"><?php echo htmlspecialchars($habitaciones[0]['tipo'] ?? ''); ?></span>
+          <h2 id="selectedRoomTitle">Habitación <?php echo htmlspecialchars($habitaciones[0]['numero'] ?? '', ENT_QUOTES, 'UTF-8'); ?></h2>
+          <span id="selectedRoomType" class="room-type-subtitle"><?php echo htmlspecialchars($habitaciones[0]['tipo'] ?? '', ENT_QUOTES, 'UTF-8'); ?></span>
         </div>
 
         <form id="roomUpdateForm" method="POST" action="">
           <input type="hidden" name="accion" value="actualizar_habitacion">
-          <input type="hidden" id="inputRoomId" name="id_habitacion" value="<?php echo htmlspecialchars($habitaciones[0]['numero'] ?? ''); ?>">
+          <input type="hidden" id="inputRoomId" name="id_habitacion" value="<?php echo htmlspecialchars($habitaciones[0]['numero'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
           
           <div class="section-label">Estado de limpieza</div>
           <div class="cleaning-options">

@@ -21,6 +21,30 @@ if (($_GET['ok'] ?? '') === '1' && preg_match('/^[A-Z0-9]{5}$/', $_GET['codigo']
     $mensaje_exito = "Reservación cancelada correctamente.";
 }
 
+// Política de cancelación vigente (RN-01)
+$dias_anticipacion_pol = 3;
+$desc_politica_pol     = 'Se permite cancelar sin penalización hasta 3 días antes de la fecha de entrada.';
+try {
+    $st_pol = $conexion->query("SELECT descripcion, dias_anticipacion FROM politica WHERE tipo = 'Cancelacion' AND vigente = 1 LIMIT 1");
+    if ($st_pol && ($pol = $st_pol->fetch(PDO::FETCH_ASSOC))) {
+        if (!empty($pol['descripcion'])) {
+            $desc_politica_pol = $pol['descripcion'];
+        }
+        if (isset($pol['dias_anticipacion']) && is_numeric($pol['dias_anticipacion'])) {
+            $dias_anticipacion_pol = (int) $pol['dias_anticipacion'];
+        }
+    }
+} catch (PDOException $e) {
+    try {
+        $st_pol = $conexion->query("SELECT descripcion FROM politica WHERE tipo = 'Cancelacion' AND vigente = 1 LIMIT 1");
+        if ($st_pol && ($pol = $st_pol->fetch(PDO::FETCH_ASSOC)) && !empty($pol['descripcion'])) {
+            $desc_politica_pol = $pol['descripcion'];
+        }
+    } catch (PDOException $e2) {
+        error_log('Recepción - política cancelación: ' . $e2->getMessage());
+    }
+}
+
 $tipos_habitacion = $conexion->query("SELECT DISTINCT tipo_habitacion FROM habitacion ORDER BY tipo_habitacion")
                              ->fetchAll(PDO::FETCH_COLUMN);
 
@@ -35,26 +59,89 @@ $form = [
     'notas'           => '',
 ];
 
+// Variables para el buscador de disponibilidad en recepción
+$disp_busqueda_activa = false;
+$disp_resultado = [];
+$busq_entrada = $_GET['disp_entrada'] ?? $hoy;
+$busq_salida  = $_GET['disp_salida'] ?? date('Y-m-d', strtotime('+1 day'));
+
+if (isset($_GET['buscar_disponibilidad'])) {
+    $disp_busqueda_activa = true;
+    if ($busq_salida <= $busq_entrada) {
+        $mensaje_error = "La fecha de salida para la consulta de disponibilidad debe ser posterior a la entrada.";
+    } else {
+        try {
+            $st_disp = $conexion->prepare("
+                SELECT h.tipo_habitacion,
+                       MIN(t.precio_noche) AS precio_noche,
+                       COUNT(h.numero_habitacion) AS total_tipo,
+                       SUM(
+                           CASE WHEN NOT EXISTS (
+                               SELECT 1 FROM reservacion r
+                               WHERE r.numero_habitacion = h.numero_habitacion
+                                 AND r.estado = 'Activa'
+                                 AND r.fecha_entrada < ?
+                                 AND r.fecha_salida  > ?
+                           ) AND h.estado_limpieza <> 'Mantenimiento' THEN 1 ELSE 0 END
+                       ) AS disponibles_rango
+                FROM habitacion h
+                LEFT JOIN tarifa t ON h.tipo_habitacion = t.tipo_habitacion AND t.vigente = 1
+                GROUP BY h.tipo_habitacion
+            ");
+            $st_disp->execute([$busq_salida, $busq_entrada]);
+            $disp_resultado = $st_disp->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log('Recepción - buscador disponibilidad: ' . $e->getMessage());
+            $mensaje_error = "Error al consultar la disponibilidad.";
+        }
+    }
+}
+
 $accion = ($_SERVER['REQUEST_METHOD'] === 'POST') ? ($_POST['accion'] ?? '') : '';
 
-// 1. Cancelar una reservación (RF-09). Queda registrado quién y cuándo (RNF-03).
+// 1. Cancelar una reservación (RF-09) aplicando la política vigente (RN-01) y validando pagos y fechas.
 if ($accion === 'cancelar_reservacion') {
-    try {
-        $st = $conexion->prepare(
-            "UPDATE reservacion
-             SET estado = 'Cancelada', modificado_por = ?, fecha_modificacion = NOW()
-             WHERE id_reservacion = ? AND estado = 'Activa'"
-        );
-        $st->execute([$id_usuario, (int) ($_POST['id_reservacion'] ?? 0)]);
+    $id_reservacion_cancelar = (int) ($_POST['id_reservacion'] ?? 0);
 
-        if ($st->rowCount() === 1) {
-            header("Location: recep.php?cancelada=1");
-            exit;
+    try {
+        $st_res = $conexion->prepare("
+            SELECT id_reservacion, fecha_entrada, estado
+            FROM reservacion
+            WHERE id_reservacion = ?
+        ");
+        $st_res->execute([$id_reservacion_cancelar]);
+        $info_res = $st_res->fetch(PDO::FETCH_ASSOC);
+
+        if (!$info_res || $info_res['estado'] !== 'Activa') {
+            $mensaje_error = "No se pudo cancelar: la reservación no existe o ya no está activa.";
+        } else {
+            $f_hoy = new DateTime($hoy);
+            $f_entrada = new DateTime($info_res['fecha_entrada']);
+            $diferencia = $f_hoy->diff($f_entrada);
+            $dias_restantes = (int) $diferencia->format('%r%a');
+
+            if ($dias_restantes < 0) {
+                $mensaje_error = "No se puede cancelar: la fecha de entrada ya pasó o la reservación ya dio inicio.";
+            } elseif ($dias_restantes < $dias_anticipacion_pol) {
+                $mensaje_error = "No se puede cancelar: el plazo límite según la política ({$dias_anticipacion_pol} días antes) ha expirado.";
+            } else {
+                $st = $conexion->prepare(
+                    "UPDATE reservacion
+                     SET estado = 'Cancelada', modificado_por = ?, fecha_modificacion = NOW()
+                     WHERE id_reservacion = ? AND estado = 'Activa'"
+                );
+                $st->execute([$id_usuario, $id_reservacion_cancelar]);
+
+                if ($st->rowCount() === 1) {
+                    header("Location: recep.php?cancelada=1");
+                    exit;
+                }
+                $mensaje_error = "No se pudo completar la cancelación.";
+            }
         }
-        $mensaje_error = "No se pudo cancelar: la reservación no existe o ya no está activa.";
     } catch (PDOException $e) {
         error_log('Recepción - cancelar: ' . $e->getMessage());
-        $mensaje_error = "No se pudo cancelar la reservación.";
+        $mensaje_error = "No se pudo cancelar la reservación debido a un error en la base de datos.";
     }
 }
 
@@ -90,12 +177,9 @@ if ($accion === 'nueva_reservacion') {
         try {
             $conexion->beginTransaction();
 
-            // Primer paso de la transacción: bloquear las habitaciones del tipo. Si dos reservaciones
-            // llegan a la vez, la segunda espera y ya ve la primera (sin traslapes).
             $conexion->prepare("SELECT numero_habitacion FROM habitacion WHERE tipo_habitacion = ? FOR UPDATE")
                      ->execute([$form['tipo_habitacion']]);
 
-            // Huésped: se usa la cuenta existente (por correo) o se crea una nueva
             $id_huesped = null;
             if ($form['correo'] !== '') {
                 $st = $conexion->prepare("SELECT id_usuario, rol FROM usuario WHERE correo = ?");
@@ -109,7 +193,6 @@ if ($accion === 'nueva_reservacion') {
                 }
             }
             if ($id_huesped === null) {
-                // Cuenta de mostrador: sin correo se genera uno interno y la contraseña es aleatoria
                 $correo_cuenta = $form['correo'] !== '' ? $form['correo'] : 'sin-correo-' . bin2hex(random_bytes(6)) . '@costaazul.invalid';
                 $hash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
                 $conexion->prepare("INSERT INTO usuario (nombre, contacto, correo, password, rol) VALUES (?, ?, ?, ?, 'Huesped')")
@@ -117,7 +200,6 @@ if ($accion === 'nueva_reservacion') {
                 $id_huesped = (int) $conexion->lastInsertId();
             }
 
-            // Habitación libre del tipo pedido, sin traslape de fechas (RF-12)
             $st = $conexion->prepare("
                 SELECT h.numero_habitacion
                 FROM habitacion h
@@ -140,16 +222,14 @@ if ($accion === 'nueva_reservacion') {
                 throw new RuntimeException("No hay habitaciones " . $form['tipo_habitacion'] . " disponibles en esas fechas.");
             }
 
-            // Tarifa y política vigentes
             $st = $conexion->prepare("SELECT id_tarifa FROM tarifa WHERE tipo_habitacion = ? AND vigente = 1 LIMIT 1");
             $st->execute([$form['tipo_habitacion']]);
             $id_tarifa   = $st->fetchColumn();
-            $id_politica = $conexion->query("SELECT id_politica FROM politica_cancelacion WHERE vigente = 1 LIMIT 1")->fetchColumn();
+            $id_politica = $conexion->query("SELECT id_politica FROM politica WHERE vigente = 1 LIMIT 1")->fetchColumn();
             if ($id_tarifa === false || $id_politica === false) {
                 throw new RuntimeException("No hay tarifa o política de cancelación vigente. Avisa al administrador.");
             }
 
-            // Código de confirmación único de 5 caracteres
             $alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
             $existe   = $conexion->prepare("SELECT 1 FROM reservacion WHERE numero_confirmacion = ?");
             do {
@@ -160,7 +240,6 @@ if ($accion === 'nueva_reservacion') {
                 $existe->execute([$codigo]);
             } while ($existe->fetchColumn());
 
-            // Guardar: la BD pone fecha y hora; se registra el usuario de recepción
             $conexion->prepare("
                 INSERT INTO reservacion
                     (numero_confirmacion, fecha_entrada, fecha_salida, estado, notas, canal,
@@ -186,14 +265,15 @@ if ($accion === 'nueva_reservacion') {
     }
 }
 
-// 3. Lista de reservaciones (las 50 más recientes, en línea y de recepción)
+// 3. Lista de reservaciones (las 50 más recientes)
 $reservaciones = $conexion->query("
     SELECT r.id_reservacion,
            r.numero_confirmacion AS codigo,
            u.nombre              AS nombre_huesped,
            r.fecha_entrada, r.fecha_salida,
            h.tipo_habitacion, r.numero_habitacion,
-           r.canal, r.estado, r.notas
+           r.canal, r.estado, r.notas,
+           COALESCE((SELECT SUM(monto) FROM pago WHERE id_reservacion = r.id_reservacion), 0) AS total_pagado
     FROM reservacion r
     JOIN usuario u    ON u.id_usuario = r.id_huesped
     JOIN habitacion h ON h.numero_habitacion = r.numero_habitacion
@@ -238,8 +318,8 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
     <div class="user-profile">
       <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
       <div class="user-info">
-        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario); ?></span>
-        <span class="user-role"><?php echo htmlspecialchars($rol_usuario); ?></span>
+        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario, ENT_QUOTES, 'UTF-8'); ?></span>
+        <span class="user-role"><?php echo htmlspecialchars($rol_usuario, ENT_QUOTES, 'UTF-8'); ?></span>
       </div>
       <a href="../../config/logout.php" title="Cerrar sesión" style="margin-left: 14px; color: inherit;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
@@ -255,10 +335,10 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       </div>
 
       <?php if ($mensaje_exito): ?>
-          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_exito); ?></div>
+          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_exito, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
       <?php if ($mensaje_error): ?>
-          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_error); ?></div>
+          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_error, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
 
       <div class="filter-toolbar">
@@ -293,23 +373,29 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
               <?php
                 $estado_raw   = strtolower($res['estado']);
                 $estado_class = ($estado_raw === 'cancelada') ? 'cancelled' : (($estado_raw === 'finalizada') ? 'finalized' : 'active');
+                $monto_pagado = (float) $res['total_pagado'];
+                $nota_texto   = $res['notas'] ?? '';
               ?>
-              <tr class="res-row" data-estado="<?php echo htmlspecialchars($estado_raw); ?>">
-                <td><b><?php echo htmlspecialchars($res['codigo']); ?></b></td>
-                <td class="guest-cell"><?php echo htmlspecialchars($res['nombre_huesped']); ?></td>
+              <tr class="res-row" data-estado="<?php echo htmlspecialchars($estado_raw, ENT_QUOTES, 'UTF-8'); ?>">
+                <td><b><?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?></b></td>
+                <td class="guest-cell"><?php echo htmlspecialchars($res['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?></td>
                 <td><?php echo fecha($res['fecha_entrada']); ?></td>
                 <td><?php echo fecha($res['fecha_salida']); ?></td>
-                <td><?php echo htmlspecialchars($res['tipo_habitacion'] . ' · ' . $res['numero_habitacion']); ?></td>
-                <td><?php echo htmlspecialchars($res['canal']); ?></td>
-                <td><span class="status-badge <?php echo $estado_class; ?>"><?php echo htmlspecialchars($res['estado']); ?></span></td>
+                <td><?php echo htmlspecialchars($res['tipo_habitacion'] . ' · ' . $res['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?></td>
+                <td><?php echo htmlspecialchars($res['canal'], ENT_QUOTES, 'UTF-8'); ?></td>
+                <td><span class="status-badge <?php echo $estado_class; ?>"><?php echo htmlspecialchars($res['estado'], ENT_QUOTES, 'UTF-8'); ?></span></td>
                 <td>
-                  <?php if (!empty($res['notas'])): ?>
-                    <i class="fa-regular fa-note-sticky note-icon" title="<?php echo htmlspecialchars($res['notas']); ?>"></i>
+                  <?php if (!empty($nota_texto)): ?>
+                    <button type="button" class="btn-view-note" onclick="mostrarNotaModal('<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', '<?php echo htmlspecialchars(json_encode($nota_texto), ENT_QUOTES, 'UTF-8'); ?>')" style="background: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #334155;" title="Ver nota">
+                      <i class="fa-regular fa-note-sticky" style="color: #d97706;"></i> Ver nota
+                    </button>
+                  <?php else: ?>
+                    <span style="color: #94a3b8; font-size: 12px;">Sin nota</span>
                   <?php endif; ?>
                 </td>
                 <td>
                   <?php if ($estado_raw === 'activa'): ?>
-                    <form method="POST" onsubmit="return confirm('¿Cancelar esta reservación?');">
+                    <form method="POST" onsubmit="return confirmarCancelacion(this, '<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo $monto_pagado; ?>, <?php echo htmlspecialchars(json_encode($desc_politica_pol), ENT_QUOTES, 'UTF-8'); ?>);">
                       <input type="hidden" name="accion" value="cancelar_reservacion">
                       <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
                       <button type="submit" class="btn-cancel-row">Cancelar</button>
@@ -328,7 +414,7 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
         </table>
 
         <div class="table-footer">
-          <span class="note-legend"><i class="fa-regular fa-note-sticky"></i> Con solicitudes especiales</span>
+          <span class="note-legend"><i class="fa-regular fa-note-sticky"></i> Notas y solicitudes especiales accesibles en cualquier dispositivo</span>
           <span class="pagination-info"><?php echo count($reservaciones); ?> reservaciones</span>
         </div>
       </div>
@@ -355,8 +441,47 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
     </section>
 
     <aside class="right-column">
-      <div class="reservation-card-box">
 
+      <!-- Buscador de Disponibilidad por Fechas para Recepción -->
+      <div class="reservation-card-box" style="margin-bottom: 25px;">
+        <div class="new-res-header">
+          <h2>Consultar disponibilidad</h2>
+          <span class="channel-badge" style="background: #eef2f7; color: #1e293b;">Fechas</span>
+        </div>
+
+        <form method="GET">
+          <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 12px;">
+            <div class="input-group" style="flex: 1; margin-bottom: 0;">
+              <label>Entrada</label>
+              <input type="date" name="disp_entrada" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($busq_entrada, ENT_QUOTES, 'UTF-8'); ?>" required>
+            </div>
+            <div class="input-group" style="flex: 1; margin-bottom: 0;">
+              <label>Salida</label>
+              <input type="date" name="disp_salida" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($busq_salida, ENT_QUOTES, 'UTF-8'); ?>" required>
+            </div>
+          </div>
+          <button type="submit" name="buscar_disponibilidad" value="1" class="btn-search" style="width: 100%; padding: 10px; background: #0f172a; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+            <i class="fa-solid fa-magnifying-glass"></i> Verificar disponibilidad
+          </button>
+        </form>
+
+        <?php if ($disp_busqueda_activa): ?>
+          <div class="availability-results" style="margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+            <p style="font-size: 13px; color: #64748b; margin-bottom: 8px;">Disponibilidad del <b><?php echo fecha($busq_entrada); ?></b> al <b><?php echo fecha($busq_salida); ?></b>:</p>
+            <?php foreach ($disp_resultado as $res_disp): ?>
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px dashed #f1f5f9; font-size: 13px;">
+                <span><b><?php echo htmlspecialchars($res_disp['tipo_habitacion'], ENT_QUOTES, 'UTF-8'); ?></b><br><small style="color: #64748b;">$<?php echo number_format((float)$res_disp['precio_noche'], 2); ?> / noche</small></span>
+                <span style="font-weight: 600; color: <?php echo $res_disp['disponibles_rango'] > 0 ? '#16a34a' : '#dc2626'; ?>;">
+                  <?php echo (int)$res_disp['disponibles_rango']; ?> libres
+                </span>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+      </div>
+
+      <!-- Tarjeta de Nueva Reservación -->
+      <div class="reservation-card-box">
         <div class="new-res-header">
           <h2>Nueva reservación</h2>
           <span class="channel-badge">Canal: Recepción</span>
@@ -367,27 +492,27 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
 
           <div class="input-group">
             <label>Nombre del huésped</label>
-            <input type="text" name="nombre_huesped" maxlength="100" value="<?php echo htmlspecialchars($form['nombre_huesped']); ?>" placeholder="Nombre completo" required>
+            <input type="text" name="nombre_huesped" maxlength="100" value="<?php echo htmlspecialchars($form['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Nombre completo" required>
           </div>
 
           <div class="input-group">
             <label>Teléfono</label>
-            <input type="tel" name="telefono" placeholder="10 dígitos" pattern="[0-9]{10}" maxlength="10" value="<?php echo htmlspecialchars($form['telefono']); ?>" required>
+            <input type="tel" name="telefono" placeholder="10 dígitos" pattern="[0-9]{10}" maxlength="10" value="<?php echo htmlspecialchars($form['telefono'], ENT_QUOTES, 'UTF-8'); ?>" required>
           </div>
 
           <div class="input-group">
             <label>Correo (opcional)</label>
-            <input type="email" name="correo" maxlength="80" value="<?php echo htmlspecialchars($form['correo']); ?>" placeholder="Si ya tiene cuenta, se usa esa">
+            <input type="email" name="correo" maxlength="80" value="<?php echo htmlspecialchars($form['correo'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Si ya tiene cuenta, se usa esa">
           </div>
 
           <div class="form-row">
             <div class="input-group">
               <label>Entrada</label>
-              <input type="date" name="fecha_entrada" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($form['fecha_entrada']); ?>" required>
+              <input type="date" name="fecha_entrada" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($form['fecha_entrada'], ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
             <div class="input-group">
               <label>Salida</label>
-              <input type="date" name="fecha_salida" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($form['fecha_salida']); ?>" required>
+              <input type="date" name="fecha_salida" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($form['fecha_salida'], ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
           </div>
 
@@ -396,7 +521,7 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
             <div class="select-wrapper">
               <select name="tipo_habitacion" required>
                 <?php foreach ($tipos_habitacion as $tipo): ?>
-                  <option value="<?php echo htmlspecialchars($tipo); ?>" <?php echo $tipo === $form['tipo_habitacion'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($tipo); ?></option>
+                  <option value="<?php echo htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $tipo === $form['tipo_habitacion'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8'); ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
@@ -404,18 +529,29 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
 
           <div class="input-group">
             <label>Notas (opcional)</label>
-            <textarea name="notas" placeholder="Solicitudes especiales..."><?php echo htmlspecialchars($form['notas']); ?></textarea>
+            <textarea name="notas" placeholder="Solicitudes especiales..."><?php echo htmlspecialchars($form['notas'], ENT_QUOTES, 'UTF-8'); ?></textarea>
           </div>
 
           <button type="submit" class="btn-save-reservation">Guardar reservación</button>
 
-          <p class="system-timestamp">Se guardan fecha, hora y tu usuario (<?php echo htmlspecialchars($nombre_usuario); ?>).</p>
+          <p class="system-timestamp">Se guardan fecha, hora y tu usuario (<?php echo htmlspecialchars($nombre_usuario, ENT_QUOTES, 'UTF-8'); ?>).</p>
         </form>
 
       </div>
     </aside>
 
   </main>
+
+  <!-- Modal para ver Notas y Solicitudes Especiales -->
+  <div id="notaModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: #fff; width: 90%; max-width: 450px; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+      <h3 id="modalNotaTitulo" style="margin-top: 0; color: #0f172a; font-size: 18px; margin-bottom: 12px;">Solicitudes especiales</h3>
+      <p id="modalNotaContenido" style="color: #334155; font-size: 14px; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; line-height: 1.5; white-space: pre-wrap; margin-bottom: 20px;"></p>
+      <div style="text-align: right;">
+        <button type="button" onclick="cerrarNotaModal()" style="background: #0f172a; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500;">Cerrar</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     function filtrarReservaciones() {
@@ -431,6 +567,24 @@ $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       document.querySelectorAll('#reservationsTableBody tr.res-row').forEach(row => {
         row.style.display = (estado === 'todas' || row.dataset.estado === estado) ? '' : 'none';
       });
+    }
+
+    function confirmarCancelacion(form, codigo, montoPagado, politicaDesc) {
+      let mensaje = `¿Estás seguro de cancelar la reservación ${codigo}?\n\nPolítica de Cancelación:\n- ${politicaDesc}`;
+      if (montoPagado > 0) {
+        mensaje += `\n\n¡Atención! Esta reservación cuenta con pagos registrados por un total de $${montoPagado.toFixed(2)}. Verifique reembolsos antes de proceder.`;
+      }
+      return confirm(mensaje);
+    }
+
+    function mostrarNotaModal(codigo, nota) {
+      document.getElementById('modalNotaTitulo').textContent = `Notas - Reservación ${codigo}`;
+      document.getElementById('modalNotaContenido').textContent = nota;
+      document.getElementById('notaModal').style.display = 'flex';
+    }
+
+    function cerrarNotaModal() {
+      document.getElementById('notaModal').style.display = 'none';
     }
   </script>
 </body>

@@ -9,6 +9,7 @@ if (isset($_SESSION['id_usuario'])) {
 }
 
 $errorMsg = '';
+$correo = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $correo = trim($_POST['correo'] ?? '');
@@ -88,16 +89,16 @@ $registroOk = (($_GET['registro'] ?? '') === 'ok');
 
       <?php if (!empty($errorMsg)): ?>
         <div class="alert alert-danger" style="color: #d9534f; background-color: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; font-weight: 500;">
-          <?php echo htmlspecialchars($errorMsg); ?>
+          <?php echo htmlspecialchars($errorMsg, ENT_QUOTES, 'UTF-8'); ?>
         </div>
       <?php endif; ?>
 
       <form id="loginForm" class="login-form" method="POST" action="">
         <div class="input-group">
-          <label for="username">Correo electrónico / Usuario</label>
+          <label for="username">Correo electrónico</label>
           <div class="input-wrapper">
             <i class="fa-regular fa-user icon-left"></i>
-            <input type="text" id="username" name="correo" placeholder="Ej. huesped.a@correo.test" required>
+            <input type="email" id="username" name="correo" maxlength="80" value="<?php echo htmlspecialchars($correo, ENT_QUOTES, 'UTF-8'); ?>" placeholder="tu@correo.com" required>
           </div>
         </div>
         <div class="input-group">

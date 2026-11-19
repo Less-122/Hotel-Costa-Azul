@@ -54,50 +54,57 @@ $codigo_buscado = strtoupper(trim($_GET['codigo'] ?? ''));
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'registrar_pago') {
     $codigo_buscado = strtoupper(trim($_POST['codigo_reservacion'] ?? ''));
     $tipo_pago = $_POST['tipo_pago'] ?? '';
-    $monto = round((float) str_replace(',', '.', $_POST['monto'] ?? '0'), 2);
+    $monto_raw = trim($_POST['monto'] ?? '');
 
-    if (!in_array($tipo_pago, $tipos_pago, true)) {
-        $mensaje_error = "Tipo de pago no válido.";
-    } elseif ($monto <= 0) {
-        $mensaje_error = "Por favor ingresa un monto válido.";
+    // Validación estricta del formato del monto: solo números enteros o con hasta 2 decimales (ej. 1200 o 1200.50)
+    if (!preg_match('/^\d+(\.\d{1,2})?$/', $monto_raw)) {
+        $mensaje_error = "El formato del monto no es válido. Utiliza un número válido (ej. 1200 o 1200.50).";
     } else {
-        $res = $codigo_buscado !== '' ? cargarReservacion($conexion, $codigo_buscado) : null;
-        if (!$res) {
-            $mensaje_error = "No se encontró ninguna reservación con el código: " . $codigo_buscado;
-        } elseif ($res['estado'] !== 'Activa') {
-            $mensaje_error = "Solo se pueden registrar pagos en reservaciones activas.";
+        $monto = round((float) $monto_raw, 2);
+
+        if (!in_array($tipo_pago, $tipos_pago, true)) {
+            $mensaje_error = "Tipo de pago no válido.";
+        } elseif ($monto <= 0) {
+            $mensaje_error = "Por favor ingresa un monto válido mayor a 0.";
         } else {
-            try {
-                $conexion->beginTransaction();
+            $res = $codigo_buscado !== '' ? cargarReservacion($conexion, $codigo_buscado) : null;
+            if (!$res) {
+                $mensaje_error = "No se encontró ninguna reservación con el código: " . $codigo_buscado;
+            } elseif ($res['estado'] !== 'Activa') {
+                $mensaje_error = "Solo se pueden registrar pagos en reservaciones activas.";
+            } else {
+                try {
+                    $conexion->beginTransaction();
 
-                // Se bloquea la reservación mientras se calcula el saldo, para no sobrepasar el total
-                $conexion->prepare("SELECT id_reservacion FROM reservacion WHERE id_reservacion = ? FOR UPDATE")
-                         ->execute([$res['id_reservacion']]);
-                $saldo = round(totalReservacion($res) - totalPagado($conexion, (int) $res['id_reservacion']), 2);
+                    // Se bloquea la reservación mientras se calcula el saldo, para no sobrepasar el total
+                    $conexion->prepare("SELECT id_reservacion FROM reservacion WHERE id_reservacion = ? FOR UPDATE")
+                             ->execute([$res['id_reservacion']]);
+                    $saldo = round(totalReservacion($res) - totalPagado($conexion, (int) $res['id_reservacion']), 2);
 
-                if ($monto > $saldo) {
-                    $conexion->rollBack();
-                    $mensaje_error = "El monto ($" . number_format($monto, 2) . ") supera el saldo pendiente ($" . number_format(max(0, $saldo), 2) . ").";
-                } elseif ($tipo_pago === 'Liquidación' && abs($monto - $saldo) >= 0.005) {
-                    $conexion->rollBack();
-                    $mensaje_error = "Una liquidación debe cubrir todo el saldo pendiente ($" . number_format($saldo, 2) . ").";
-                } elseif ($tipo_pago === 'Anticipo' && abs($monto - $saldo) < 0.005) {
-                    $conexion->rollBack();
-                    $mensaje_error = "Este monto cubre todo el saldo: regístralo como Liquidación.";
-                } else {
-                    $conexion->prepare("
-                        INSERT INTO pago (monto, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                        VALUES (?, ?, 'Terminal recepción', ?, ?)
-                    ")->execute([$monto, $tipo_pago, $res['id_reservacion'], $_SESSION['id_usuario']]);
-                    $conexion->commit();
+                    if ($monto > $saldo) {
+                        $conexion->rollBack();
+                        $mensaje_error = "El monto ($" . number_format($monto, 2) . ") supera el saldo pendiente ($" . number_format(max(0, $saldo), 2) . ").";
+                    } elseif ($tipo_pago === 'Liquidación' && abs($monto - $saldo) >= 0.005) {
+                        $conexion->rollBack();
+                        $mensaje_error = "Una liquidación debe cubrir todo el saldo pendiente ($" . number_format($saldo, 2) . ").";
+                    } elseif ($tipo_pago === 'Anticipo' && abs($monto - $saldo) < 0.005) {
+                        $conexion->rollBack();
+                        $mensaje_error = "Este monto cubre todo el saldo: regístralo como Liquidación.";
+                    } else {
+                        $conexion->prepare("
+                            INSERT INTO pago (monto, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                            VALUES (?, ?, 'Terminal recepción', ?, ?)
+                        ")->execute([$monto, $tipo_pago, $res['id_reservacion'], $_SESSION['id_usuario']]);
+                        $conexion->commit();
 
-                    header("Location: pagos.php?codigo=" . urlencode($codigo_buscado) . "&ok=1");
-                    exit();
+                        header("Location: pagos.php?codigo=" . urlencode($codigo_buscado) . "&ok=1");
+                        exit();
+                    }
+                } catch (PDOException $e) {
+                    if ($conexion->inTransaction()) { $conexion->rollBack(); }
+                    error_log('Recepción - registrar pago: ' . $e->getMessage());
+                    $mensaje_error = "No se pudo registrar el pago. Inténtalo de nuevo.";
                 }
-            } catch (PDOException $e) {
-                if ($conexion->inTransaction()) { $conexion->rollBack(); }
-                error_log('Recepción - registrar pago: ' . $e->getMessage());
-                $mensaje_error = "No se pudo registrar el pago. Inténtalo de nuevo.";
             }
         }
     }
@@ -169,8 +176,8 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
     <div class="user-profile">
       <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
       <div class="user-info">
-        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario); ?></span>
-        <span class="user-role"><?php echo htmlspecialchars($rol_usuario); ?></span>
+        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario, ENT_QUOTES, 'UTF-8'); ?></span>
+        <span class="user-role"><?php echo htmlspecialchars($rol_usuario, ENT_QUOTES, 'UTF-8'); ?></span>
       </div>
       <a href="../../config/logout.php" title="Cerrar sesión" style="margin-left: 14px; color: inherit;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
@@ -188,10 +195,10 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       </div>
 
       <?php if (!empty($mensaje_exito)): ?>
-          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_exito); ?></div>
+          <div class="alert alert-success" style="color: green; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_exito, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
       <?php if (!empty($mensaje_error)): ?>
-          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_error); ?></div>
+          <div class="alert alert-danger" style="color: red; margin-bottom: 15px; font-weight: bold;"><?php echo htmlspecialchars($mensaje_error, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
 
       <!-- Buscador de código de reservación -->
@@ -200,7 +207,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
           <label>Código de reservación</label>
           <div class="input-field">
             <i class="fa-solid fa-ticket"></i>
-            <input type="text" name="codigo" maxlength="5" value="<?php echo htmlspecialchars($codigo_buscado); ?>" placeholder="Ej. AX7B9" required>
+            <input type="text" name="codigo" maxlength="5" value="<?php echo htmlspecialchars($codigo_buscado, ENT_QUOTES, 'UTF-8'); ?>" placeholder="Ej. AX7B9" required>
           </div>
         </div>
         <button type="submit" class="btn-search">
@@ -211,9 +218,9 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       <?php if ($reservacion): ?>
         <!-- Tarjeta de Resumen Financiero del Huésped -->
         <div class="guest-financial-card">
-          <div class="guest-name-title"><?php echo htmlspecialchars($reservacion['nombre_huesped']); ?></div>
+          <div class="guest-name-title"><?php echo htmlspecialchars($reservacion['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?></div>
           <div class="guest-stay-info">
-             <?php echo fecha($reservacion['fecha_entrada']); ?> → <?php echo fecha($reservacion['fecha_salida']); ?> · <?php echo htmlspecialchars($reservacion['tipo_habitacion'] . ' ' . $reservacion['numero_habitacion']); ?> · <?php echo htmlspecialchars($reservacion['estado']); ?>
+             <?php echo fecha($reservacion['fecha_entrada']); ?> → <?php echo fecha($reservacion['fecha_salida']); ?> · <?php echo htmlspecialchars($reservacion['tipo_habitacion'] . ' ' . $reservacion['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?> · <?php echo htmlspecialchars($reservacion['estado'], ENT_QUOTES, 'UTF-8'); ?>
           </div>
 
           <div class="financial-rows">
@@ -240,7 +247,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
 
           <form method="POST" action="" id="registerPaymentForm">
             <input type="hidden" name="accion" value="registrar_pago">
-            <input type="hidden" name="codigo_reservacion" value="<?php echo htmlspecialchars($codigo_buscado); ?>">
+            <input type="hidden" name="codigo_reservacion" value="<?php echo htmlspecialchars($codigo_buscado, ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" name="tipo_pago" id="tipoPagoInput" value="Anticipo">
 
             <div class="input-group">
@@ -255,7 +262,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
               <label>Monto</label>
               <div class="input-field">
                 <i class="fa-solid fa-ticket"></i>
-                <input type="number" step="0.01" min="0.01" max="<?php echo $saldo_pendiente; ?>" name="monto" id="paymentAmountInput" data-saldo="<?php echo $saldo_pendiente; ?>" placeholder="0.00" required>
+                <input type="text" pattern="^\d+(\.\d{1,2})?$" title="Ingresa un número válido (ej. 1200 o 1200.50)" name="monto" id="paymentAmountInput" data-saldo="<?php echo $saldo_pendiente; ?>" placeholder="0.00" required>
               </div>
             </div>
 
@@ -263,7 +270,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
           </form>
         </div>
         <?php elseif ($reservacion['estado'] !== 'Activa'): ?>
-          <p style="text-align: center; color: #666; padding: 20px;">Esta reservación está <?php echo htmlspecialchars(strtolower($reservacion['estado'])); ?>; no admite pagos.</p>
+          <p style="text-align: center; color: #666; padding: 20px;">Esta reservación está <?php echo htmlspecialchars(strtolower($reservacion['estado']), ENT_QUOTES, 'UTF-8'); ?>; no admite pagos.</p>
         <?php else: ?>
           <p style="text-align: center; color: #3c763d; padding: 20px; font-weight: 600;">Reservación liquidada: no hay saldo pendiente.</p>
         <?php endif; ?>
@@ -301,9 +308,9 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
                 <?php foreach ($historial_pagos as $pago): ?>
                   <tr>
                     <td><?php echo fecha($pago['fecha_hora']) . date(' - H:i', strtotime($pago['fecha_hora'])); ?></td>
-                    <td><?php echo htmlspecialchars($pago['tipo_pago']); ?></td>
+                    <td><?php echo htmlspecialchars($pago['tipo_pago'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td>$<?php echo number_format((float) $pago['monto'], 2); ?></td>
-                    <td><?php echo htmlspecialchars($pago['registrado_por']); ?></td>
+                    <td><?php echo htmlspecialchars($pago['registrado_por'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td><i class="fa-solid fa-lock" title="Pago bloqueado (seguridad)"></i></td>
                   </tr>
                 <?php endforeach; ?>

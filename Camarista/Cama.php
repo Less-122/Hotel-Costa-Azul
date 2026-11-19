@@ -26,6 +26,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_habitacion']) && i
             exit();
         }
 
+        // RN-03: Si se intenta cambiar a Mantenimiento, verificar si tiene reservaciones activas vigentes
+        if ($nuevo_estado === 'Mantenimiento') {
+            $hoy_fecha = date('Y-m-d');
+            $st_check = $conexion->prepare("
+                SELECT COUNT(*) FROM reservacion 
+                WHERE numero_habitacion = ? 
+                  AND estado = 'Activa' 
+                  AND fecha_salida >= ?
+            ");
+            $st_check->execute([$numero_habitacion, $hoy_fecha]);
+            $reservaciones_activas = (int) $st_check->fetchColumn();
+
+            if ($reservaciones_activas > 0) {
+                echo json_encode([
+                    'success' => false, 
+                    'error' => "No se puede poner en Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) (RN-03)."
+                ]);
+                exit();
+            }
+        }
+
         // Una habitación en mantenimiento no se puede rentar: se marca como no disponible.
         // Al volver a Limpia/Sucia, recepción decide cuándo vuelve a estar Libre.
         if ($nuevo_estado === 'Mantenimiento') {
@@ -91,8 +112,8 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
     <div class="user-profile">
       <div class="user-avatar"><i class="fa-regular fa-user"></i></div>
       <div class="user-info">
-        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario); ?></span>
-        <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'] ?? 'Camarista')); ?></span>
+        <span class="user-name"><?php echo htmlspecialchars($nombre_usuario, ENT_QUOTES, 'UTF-8'); ?></span>
+        <span class="user-role"><?php echo ucfirst(htmlspecialchars($_SESSION['rol'] ?? 'Camarista', ENT_QUOTES, 'UTF-8')); ?></span>
       </div>
       <a href="../config/logout.php" title="Cerrar sesión" style="margin-left: 14px; color: inherit;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
@@ -102,7 +123,7 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
   <main class="main-container">
     
     <div class="welcome-area">
-      <h1>Hola, <?php echo htmlspecialchars(explode(' ', $nombre_usuario)[0]); ?></h1>
+      <h1>Hola, <?php echo htmlspecialchars(explode(' ', $nombre_usuario)[0], ENT_QUOTES, 'UTF-8'); ?></h1>
       <p id="subtitleNotice">Tienes <?php echo $sucias_count; ?> habitación<?php echo $sucias_count == 1 ? '' : 'es'; ?> sucia<?php echo $sucias_count == 1 ? '' : 's'; ?>.</p>
     </div>
 
@@ -129,14 +150,14 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
             $body_style = ($index === 0) ? '' : 'display: none;';
           ?>
 
-          <div class="<?php echo $card_class; ?>" data-room="<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>">
+          <div class="<?php echo $card_class; ?>" data-room="<?php echo htmlspecialchars($num_hab, ENT_QUOTES, 'UTF-8'); ?>">
             <div class="room-card-header" onclick="toggleCard(this)">
               <div>
-                <h2>Hab. <?php echo htmlspecialchars($num_hab); ?></h2>
-                <span class="room-type"><?php echo htmlspecialchars($tipo_hab); ?></span>
+                <h2>Hab. <?php echo htmlspecialchars($num_hab, ENT_QUOTES, 'UTF-8'); ?></h2>
+                <span class="room-type"><?php echo htmlspecialchars($tipo_hab, ENT_QUOTES, 'UTF-8'); ?></span>
               </div>
               <div class="header-right">
-                <span class="badge <?php echo $badge_class; ?>" id="badge-<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>"><?php echo $badge_text; ?></span>
+                <span class="badge <?php echo $badge_class; ?>" id="badge-<?php echo htmlspecialchars($num_hab, ENT_QUOTES, 'UTF-8'); ?>"><?php echo $badge_text; ?></span>
                 <?php if ($index !== 0): ?>
                   <span class="open-link">Abrir ›</span>
                 <?php endif; ?>
@@ -146,14 +167,14 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
             <div class="room-card-body" style="<?php echo $body_style; ?>">
               <span class="change-state-label">Cambiar estado</span>
               <div class="state-buttons">
-                <button type="button" class="state-btn clean-btn <?php echo $is_clean ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>', 'Limpia')">
+                <button type="button" class="state-btn clean-btn <?php echo $is_clean ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES, 'UTF-8'); ?>', 'Limpia')">
                   <i class="fa-solid fa-check"></i> Limpia
                 </button>
-                <button type="button" class="state-btn dirty-btn <?php echo $is_dirty ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>', 'Sucia')">
+                <button type="button" class="state-btn dirty-btn <?php echo $is_dirty ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES, 'UTF-8'); ?>', 'Sucia')">
                   Sucia
                 </button>
               </div>
-              <button type="button" class="state-btn maint-btn <?php echo $is_maint ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES); ?>', 'Mantenimiento')">
+              <button type="button" class="state-btn maint-btn <?php echo $is_maint ? 'active' : ''; ?>" onclick="changeRoomState('<?php echo htmlspecialchars($num_hab, ENT_QUOTES, 'UTF-8'); ?>', 'Mantenimiento')">
                 Mantenimiento
               </button>
             </div>
