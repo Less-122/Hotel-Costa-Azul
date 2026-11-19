@@ -10,6 +10,8 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+require_once __DIR__ . '/conexion.php';
+
 /** Ruta base de la aplicación (ej. /Hotel-Costa-Azul/), calculada a partir de la carpeta real. */
 function urlBase(): string {
     $raiz = realpath(__DIR__ . '/..');
@@ -40,15 +42,69 @@ function paginaInicioRol(string $rol): string {
     return urlBase() . ($inicio[$rol] ?? 'Principal/index.php');
 }
 
+/** Cierra y limpia la sesión actual por completo. */
+function cerrarSesionCompleta(): void {
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $p = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_destroy();
+    }
+}
+
+/** Login correspondiente según el conjunto de roles permitidos. */
+function loginPorRoles(array $permitidos): string {
+    $esPersonal = (bool) array_intersect($permitidos, ['admin', 'recepcionista', 'camarista']);
+    return urlBase() . ($esPersonal
+        ? 'personal_login/login_personal.php'
+        : 'Huesped/Login_regis/login.php');
+}
+
+/**
+ * Sincroniza el rol actual del usuario con la tabla `usuario` cada cierto intervalo
+ * para reflejar cambios de rol o eliminación de cuenta sin consultar en cada petición.
+ */
+function sincronizarUsuarioConBD(int $intervaloSegundos = 15): bool {
+    if (empty($_SESSION['id_usuario'])) {
+        return false;
+    }
+
+    $ahora = time();
+    $ultimaVerif = (int) ($_SESSION['ultima_verificacion_bd'] ?? 0);
+    if (($ahora - $ultimaVerif) < $intervaloSegundos) {
+        return true;
+    }
+
+    try {
+        $pdo = obtenerConexion();
+        $st = $pdo->prepare("SELECT rol, nombre FROM usuario WHERE id_usuario = ? LIMIT 1");
+        $st->execute([(int) $_SESSION['id_usuario']]);
+        $usuarioBD = $st->fetch(PDO::FETCH_ASSOC);
+
+        if (!$usuarioBD) {
+            return false;
+        }
+
+        $_SESSION['rol'] = $usuarioBD['rol'];
+        if (!empty($usuarioBD['nombre'])) {
+            $_SESSION['nombre'] = $usuarioBD['nombre'];
+        }
+        $_SESSION['ultima_verificacion_bd'] = $ahora;
+        return true;
+    } catch (PDOException $e) {
+        error_log('Error al sincronizar sesión con BD: ' . $e->getMessage());
+        // Si hay un fallo temporal de BD, no tumbamos la sesión activa de golpe
+        return true;
+    }
+}
+
 /**
  * Deja pasar solo a los roles indicados; a los demás los redirige y corta la ejecución.
  *   verificarAcceso(['admin'])
  *   verificarAcceso(['recepcionista', 'admin'])
  *   verificarAcceso('huesped')
- *
- * - Sin sesión       -> al login que corresponde (personal o huésped).
- * - Con otro rol     -> a la página de inicio de su propio rol (un huésped que escribe
- *                       la URL de una pantalla del personal NO entra).
  */
 function verificarAcceso($rolesPermitidos): void {
     $permitidos = array_map('strtolower', (array)$rolesPermitidos);
@@ -59,14 +115,18 @@ function verificarAcceso($rolesPermitidos): void {
     header('Pragma: no-cache');
 
     if ($rol === '') {
-        $esPersonal = (bool) array_intersect($permitidos, ['admin', 'recepcionista', 'camarista']);
-        $login = $esPersonal
-            ? 'personal_login/login_personal.php'
-            : 'Huesped/Login_regis/login.php';
-        header('Location: ' . urlBase() . $login . '?error=acceso_denegado');
+        header('Location: ' . loginPorRoles($permitidos) . '?error=acceso_denegado');
         exit;
     }
 
+    if (!sincronizarUsuarioConBD(15)) {
+        $destinoLogin = loginPorRoles($permitidos);
+        cerrarSesionCompleta();
+        header('Location: ' . $destinoLogin . '?error=cuenta_inactiva');
+        exit;
+    }
+
+    $rol = rolActual();
     if (!in_array($rol, $permitidos, true)) {
         header('Location: ' . paginaInicioRol($rol));
         exit;

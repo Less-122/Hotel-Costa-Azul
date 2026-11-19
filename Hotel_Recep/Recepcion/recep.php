@@ -32,17 +32,32 @@ function politicaCobraPrimeraNoche(string $descripcion): bool {
 }
 
 /**
-- Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,
-- con cada palabra iniciando en mayúscula y continuando en minúsculas.
+ * Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
+ * abreviaturas con punto (ej. Ma., J.), partículas en minúscula (de, del, la, etc.),
+ * guiones (García-López) y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
  */
 function validarNombreFormato(string $nombre): bool {
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
         return false;
     }
 
+    $particulasMinuscula = ['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'dos', 'van', 'von'];
     $palabras = explode(' ', $nombre);
+
     foreach ($palabras as $palabra) {
-        if (!preg_match('/^\p{Lu}\p{Ll}+\.?$/u', $palabra) && !preg_match('/^\p{Lu}\.$/u', $palabra)) {
+        $palabraMinuscula = mb_strtolower($palabra, 'UTF-8');
+        if (in_array($palabraMinuscula, $particulasMinuscula, true)) {
+            if ($palabra !== $palabraMinuscula) {
+                return false;
+            }
+            continue;
+        }
+
+        $normalizada = str_replace('’', "'", $palabra);
+        $patronSegmento = '(?:\p{Lu}\.|\p{Lu}\p{Ll}+\.?)';
+        $patronPalabra  = '/^' . $patronSegmento . "(?:[-']" . $patronSegmento . ')*$/u';
+
+        if (!preg_match($patronPalabra, $normalizada)) {
             return false;
         }
     }
@@ -408,7 +423,7 @@ if ($accion === 'nueva_reservacion') {
     } elseif (mb_strlen($form['nombre_huesped']) > 100) {
         $mensaje_error = "El nombre es demasiado largo (máximo 100 caracteres).";
     } elseif (!validarNombreFormato($form['nombre_huesped'])) {
-        $mensaje_error = "El nombre solo puede contener letras y puntos (sin números), iniciando cada palabra con mayúscula y siguiendo con minúsculas.";
+        $mensaje_error = "El nombre solo puede contener letras, puntos, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).";
     } elseif (!preg_match('/^\d{10}$/', $form['telefono'])) {
         $mensaje_error = "El teléfono debe tener 10 dígitos.";
     } elseif ($form['correo'] !== '' && (!filter_var($form['correo'], FILTER_VALIDATE_EMAIL) || strlen($form['correo']) > 80)) {
@@ -774,7 +789,7 @@ $ahora_dt       = new DateTime();
           <div class="input-group">
             <label>Nombre del huésped</label>
             <input type="text" name="nombre_huesped" maxlength="100"
-                   title="Solo letras y puntos (sin números). Cada palabra debe iniciar con mayúscula y seguir en minúsculas."
+                   title="Letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil)."
                    value="<?php echo htmlspecialchars($form['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Nombre completo" required>
           </div>
 

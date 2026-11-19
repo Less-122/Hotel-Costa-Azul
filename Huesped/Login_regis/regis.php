@@ -9,17 +9,36 @@ if (isset($_SESSION['id_usuario'])) {
 }
 
 /**
- * Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,
- * con cada palabra iniciando en mayúscula y continuando en minúsculas.
+ * Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
+ * partículas comunes en minúscula (de, del, la, etc.), guiones (García-López)
+ * y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
  */
 function validarNombreFormato(string $nombre): bool {
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
         return false;
     }
 
+    $particulasMinuscula = ['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'dos', 'van', 'von'];
     $palabras = explode(' ', $nombre);
+
     foreach ($palabras as $palabra) {
-        if (!preg_match('/^\p{Lu}\p{Ll}+\.?$/u', $palabra) && !preg_match('/^\p{Lu}\.$/u', $palabra)) {
+        $palabraMinuscula = mb_strtolower($palabra, 'UTF-8');
+        if (in_array($palabraMinuscula, $particulasMinuscula, true)) {
+            if ($palabra !== $palabraMinuscula) {
+                return false;
+            }
+            continue;
+        }
+
+        // Normaliza apóstrofo curvo a recto para validar segmentos como O'Neil o D'Angelo
+        $normalizada = str_replace('’', "'", $palabra);
+
+        // Permite inicial con punto (ej. J.) o segmento con mayúscula inicial y minúsculas
+        // Encadenado con guion (-) o apóstrofo (')
+        $patronSegmento = '(?:\p{Lu}\.|\p{Lu}\p{Ll}+)';
+        $patronPalabra  = '/^' . $patronSegmento . "(?:[-']" . $patronSegmento . ')*$/u';
+
+        if (!preg_match($patronPalabra, $normalizada)) {
             return false;
         }
     }
@@ -42,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (mb_strlen($valores['nombre']) > 100) {
         $error = 'El nombre es demasiado largo (máximo 100 caracteres).';
     } elseif (!validarNombreFormato($valores['nombre'])) {
-        $error = 'El nombre solo puede contener letras y puntos (sin números), iniciando cada palabra con mayúscula y siguiendo con minúsculas (ej. María López Pérez).';
+        $error = 'Escribe un nombre válido usando letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).';
     } elseif (!preg_match('/^\d{10}$/', $valores['telefono'])) {
         $error = 'El teléfono debe tener 10 dígitos.';
     } elseif (!filter_var($valores['correo'], FILTER_VALIDATE_EMAIL) || strlen($valores['correo']) > 80) {
@@ -140,8 +159,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="input-group">
           <label for="fullname">Nombre completo</label>
           <input type="text" id="fullname" name="nombre" maxlength="100"
-                 title="Solo letras y puntos (sin números). Cada palabra debe iniciar con mayúscula y seguir en minúsculas."
-                 value="<?php echo htmlspecialchars($valores['nombre'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Ej. María López Pérez" required>
+                 title="Letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil)."
+                 value="<?php echo htmlspecialchars($valores['nombre'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Ej. María de la Cruz" required>
         </div>
 
         <!-- Fila: Teléfono -->
