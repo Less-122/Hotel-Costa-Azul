@@ -14,6 +14,7 @@ $mensaje_exito = '';
 $mensaje_error = '';
 
 $tipos_pago = ['Anticipo', 'Liquidación'];
+$estados_pagables = ['Activa', 'En curso'];
 
 /** Busca una reservación por su número de confirmación (con huésped, habitación y tarifa). */
 function cargarReservacion(PDO $c, string $codigo): ?array {
@@ -54,7 +55,8 @@ $codigo_buscado = strtoupper(trim($_GET['codigo'] ?? ''));
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'registrar_pago') {
     $codigo_buscado = strtoupper(trim($_POST['codigo_reservacion'] ?? ''));
     $tipo_pago = $_POST['tipo_pago'] ?? '';
-    $monto_raw = trim($_POST['monto'] ?? '');
+    $monto_raw = trim((string) ($_POST['monto'] ?? ''));
+    $id_recepcionista = (int) ($_SESSION['id_usuario'] ?? 0);
 
     // Validación estricta del formato del monto: solo números enteros o con hasta 2 decimales (ej. 1200 o 1200.50)
     if (!preg_match('/^\d+(\.\d{1,2})?$/', $monto_raw)) {
@@ -66,12 +68,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'regis
             $mensaje_error = "Tipo de pago no válido.";
         } elseif ($monto <= 0) {
             $mensaje_error = "Por favor ingresa un monto válido mayor a 0.";
+        } elseif ($id_recepcionista <= 0) {
+            $mensaje_error = "Sesión de usuario no válida.";
         } else {
             $res = $codigo_buscado !== '' ? cargarReservacion($conexion, $codigo_buscado) : null;
             if (!$res) {
                 $mensaje_error = "No se encontró ninguna reservación con el código: " . $codigo_buscado;
-            } elseif ($res['estado'] !== 'Activa') {
-                $mensaje_error = "Solo se pueden registrar pagos en reservaciones activas.";
+            } elseif (!in_array($res['estado'], $estados_pagables, true)) {
+                $mensaje_error = "Solo se pueden registrar pagos en reservaciones activas o en curso.";
             } else {
                 try {
                     $conexion->beginTransaction();
@@ -94,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'regis
                         $conexion->prepare("
                             INSERT INTO pago (monto, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
                             VALUES (?, ?, 'Terminal recepción', ?, ?)
-                        ")->execute([$monto, $tipo_pago, $res['id_reservacion'], $_SESSION['id_usuario']]);
+                        ")->execute([$monto, $tipo_pago, $res['id_reservacion'], $id_recepcionista]);
                         $conexion->commit();
 
                         header("Location: pagos.php?codigo=" . urlencode($codigo_buscado) . "&ok=1");
@@ -140,7 +144,7 @@ if ($codigo_buscado !== '') {
     }
 }
 
-$puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $saldo_pendiente > 0;
+$puede_pagar = $reservacion && in_array($reservacion['estado'], $estados_pagables, true) && $saldo_pendiente > 0;
 
 $nombre_usuario = $_SESSION['nombre'] ?? 'Recepción';
 $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
@@ -269,7 +273,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
             <button type="submit" class="btn-register-pay">Registrar pago</button>
           </form>
         </div>
-        <?php elseif ($reservacion['estado'] !== 'Activa'): ?>
+        <?php elseif (!in_array($reservacion['estado'], $estados_pagables, true)): ?>
           <p style="text-align: center; color: #666; padding: 20px;">Esta reservación está <?php echo htmlspecialchars(strtolower($reservacion['estado']), ENT_QUOTES, 'UTF-8'); ?>; no admite pagos.</p>
         <?php else: ?>
           <p style="text-align: center; color: #3c763d; padding: 20px; font-weight: 600;">Reservación liquidada: no hay saldo pendiente.</p>

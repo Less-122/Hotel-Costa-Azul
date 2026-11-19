@@ -4,6 +4,9 @@ verificarAcceso(['recepcionista', 'admin']);
 
 require_once '../../config/conexion.php';
 
+const MAX_DIAS_ANTICIPACION = 365;
+const MAX_NOCHES_ESTANCIA   = 90;
+
 function fecha(string $f, bool $con_anio = false): string {
     $meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
     $t = strtotime($f);
@@ -11,8 +14,42 @@ function fecha(string $f, bool $con_anio = false): string {
 }
 
 /**
-- Extrae las horas mínimas de anticipación a partir de la descripción de la política.
-- Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
+ * Valida fechas de entrada y salida bajo las mismas reglas que Reser.php:
+ * formato Y-m-d válido, no anterior a hoy, máximo 365 días de anticipación,
+ * salida posterior a entrada y máximo 90 noches de estancia.
+ */
+function validarFechas(string $entrada, string $salida): string {
+    $e = DateTime::createFromFormat('!Y-m-d', $entrada);
+    $s = DateTime::createFromFormat('!Y-m-d', $salida);
+
+    if (!$e || !$s || $e->format('Y-m-d') !== $entrada || $s->format('Y-m-d') !== $salida) {
+        return "Las fechas no son válidas.";
+    }
+
+    $hoy_dt    = new DateTime('today');
+    $max_fecha = (clone $hoy_dt)->modify('+' . MAX_DIAS_ANTICIPACION . ' days');
+
+    if ($e < $hoy_dt) {
+        return "La fecha de entrada no puede ser anterior a hoy.";
+    }
+    if ($e > $max_fecha || $s > $max_fecha) {
+        return "Solo se puede reservar con hasta " . MAX_DIAS_ANTICIPACION . " días de anticipación (máximo " . $max_fecha->format('Y-m-d') . ").";
+    }
+    if ($s <= $e) {
+        return "La salida debe ser posterior a la entrada.";
+    }
+
+    $noches_calc = (int) $e->diff($s)->days;
+    if ($noches_calc > MAX_NOCHES_ESTANCIA) {
+        return "La estancia máxima permitida es de " . MAX_NOCHES_ESTANCIA . " noches.";
+    }
+
+    return '';
+}
+
+/**
+ * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
+ * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
  */
 function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
     if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs)\b/iu', $descripcion, $m)) {
@@ -25,7 +62,7 @@ function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72):
 }
 
 /**
-- Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
+ * Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
  */
 function politicaCobraPrimeraNoche(string $descripcion): bool {
     return (bool) preg_match('/primera\s+noche|1\s*noche|una\s+noche/iu', $descripcion);
@@ -107,7 +144,9 @@ try {
 $tipos_habitacion = $conexion->query("SELECT DISTINCT tipo_habitacion FROM habitacion ORDER BY tipo_habitacion")
                              ->fetchAll(PDO::FETCH_COLUMN);
 
-$hoy  = date('Y-m-d');
+$hoy           = date('Y-m-d');
+$max_fecha_str = (new DateTime('today'))->modify('+' . MAX_DIAS_ANTICIPACION . ' days')->format('Y-m-d');
+
 $form = [
     'nombre_huesped'  => '',
     'telefono'        => '',
@@ -121,14 +160,16 @@ $form = [
 // Variables para el buscador de disponibilidad en recepción
 $disp_busqueda_activa = false;
 $disp_resultado = [];
-$busq_entrada = $_GET['disp_entrada'] ?? $hoy;
-$busq_salida  = $_GET['disp_salida'] ?? date('Y-m-d', strtotime('+1 day'));
+$busq_entrada = trim((string) ($_GET['disp_entrada'] ?? $hoy));
+$busq_salida  = trim((string) ($_GET['disp_salida'] ?? date('Y-m-d', strtotime('+1 day'))));
 
 if (isset($_GET['buscar_disponibilidad'])) {
-    $disp_busqueda_activa = true;
-    if ($busq_salida <= $busq_entrada) {
-        $mensaje_error = "La fecha de salida para la consulta de disponibilidad debe ser posterior a la entrada.";
+    $error_busq = validarFechas($busq_entrada, $busq_salida);
+    if ($error_busq !== '') {
+        $mensaje_error = $error_busq;
     } else {
+        $disp_busqueda_activa = true;
+        $cond_hoy_disp = ($busq_entrada === $hoy) ? " AND h.disponible = 1" : "";
         try {
             $st_disp = $conexion->prepare("
                 SELECT h.tipo_habitacion,
@@ -141,7 +182,7 @@ if (isset($_GET['buscar_disponibilidad'])) {
                                  AND r.estado IN ('Activa', 'En curso')
                                  AND r.fecha_entrada < ?
                                  AND r.fecha_salida  > ?
-                           ) AND h.estado_limpieza <> 'Mantenimiento' THEN 1 ELSE 0 END
+                           ) AND h.estado_limpieza <> 'Mantenimiento'{$cond_hoy_disp} THEN 1 ELSE 0 END
                        ) AS disponibles_rango
                 FROM habitacion h
                 LEFT JOIN tarifa t ON h.tipo_habitacion = t.tipo_habitacion AND t.vigente = 1
@@ -411,12 +452,9 @@ if ($accion === 'nueva_reservacion') {
     foreach ($form as $campo => $_) {
         $form[$campo] = trim($_POST[$campo] ?? $form[$campo]);
     }
+    $form['notas'] = mb_substr($form['notas'], 0, 255);
 
-    $f_ent = DateTime::createFromFormat('Y-m-d', $form['fecha_entrada']);
-    $f_sal = DateTime::createFromFormat('Y-m-d', $form['fecha_salida']);
-    $fechas_ok = $f_ent && $f_sal
-        && $f_ent->format('Y-m-d') === $form['fecha_entrada']
-        && $f_sal->format('Y-m-d') === $form['fecha_salida'];
+    $error_fechas = validarFechas($form['fecha_entrada'], $form['fecha_salida']);
 
     if ($form['nombre_huesped'] === '' || $form['telefono'] === '' || $form['fecha_entrada'] === '' || $form['fecha_salida'] === '') {
         $mensaje_error = "Por favor completa todos los campos obligatorios.";
@@ -428,12 +466,8 @@ if ($accion === 'nueva_reservacion') {
         $mensaje_error = "El teléfono debe tener 10 dígitos.";
     } elseif ($form['correo'] !== '' && (!filter_var($form['correo'], FILTER_VALIDATE_EMAIL) || strlen($form['correo']) > 80)) {
         $mensaje_error = "El correo electrónico no es válido.";
-    } elseif (!$fechas_ok) {
-        $mensaje_error = "Las fechas no son válidas.";
-    } elseif ($form['fecha_entrada'] < $hoy) {
-        $mensaje_error = "La fecha de entrada no puede ser anterior a hoy.";
-    } elseif ($form['fecha_salida'] <= $form['fecha_entrada']) {
-        $mensaje_error = "La salida debe ser posterior a la entrada.";
+    } elseif ($error_fechas !== '') {
+        $mensaje_error = $error_fechas;
     } elseif (!in_array($form['tipo_habitacion'], $tipos_habitacion, true)) {
         $mensaje_error = "Tipo de habitación no válido.";
     } else {
@@ -463,11 +497,12 @@ if ($accion === 'nueva_reservacion') {
                 $id_huesped = (int) $conexion->lastInsertId();
             }
 
+            $solo_libres_hoy = ($form['fecha_entrada'] === $hoy) ? " AND h.disponible = 1" : "";
             $st = $conexion->prepare("
                 SELECT h.numero_habitacion
                 FROM habitacion h
                 WHERE h.tipo_habitacion = ?
-                  AND h.estado_limpieza <> 'Mantenimiento'
+                  AND h.estado_limpieza <> 'Mantenimiento'{$solo_libres_hoy}
                   AND NOT EXISTS (
                         SELECT 1 FROM reservacion r
                         WHERE r.numero_habitacion = h.numero_habitacion
@@ -559,6 +594,18 @@ $stats = $conexion->query("
 $nombre_usuario = $_SESSION['nombre'] ?? 'Recepción';
 $rol_usuario    = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
 $ahora_dt       = new DateTime();
+
+$min_salida_busq = date('Y-m-d', strtotime('+1 day'));
+$dt_busq_ent = DateTime::createFromFormat('!Y-m-d', $busq_entrada);
+if ($dt_busq_ent && $dt_busq_ent->format('Y-m-d') === $busq_entrada) {
+    $min_salida_busq = (clone $dt_busq_ent)->modify('+1 day')->format('Y-m-d');
+}
+
+$min_salida_form = date('Y-m-d', strtotime('+1 day'));
+$dt_form_ent = DateTime::createFromFormat('!Y-m-d', $form['fecha_entrada']);
+if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
+    $min_salida_form = (clone $dt_form_ent)->modify('+1 day')->format('Y-m-d');
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -749,11 +796,11 @@ $ahora_dt       = new DateTime();
           <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 12px;">
             <div class="input-group" style="flex: 1; margin-bottom: 0;">
               <label>Entrada</label>
-              <input type="date" name="disp_entrada" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($busq_entrada, ENT_QUOTES, 'UTF-8'); ?>" required>
+              <input type="date" id="disp_entrada" name="disp_entrada" min="<?php echo htmlspecialchars($hoy, ENT_QUOTES, 'UTF-8'); ?>" max="<?php echo htmlspecialchars($max_fecha_str, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($busq_entrada, ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
             <div class="input-group" style="flex: 1; margin-bottom: 0;">
               <label>Salida</label>
-              <input type="date" name="disp_salida" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($busq_salida, ENT_QUOTES, 'UTF-8'); ?>" required>
+              <input type="date" id="disp_salida" name="disp_salida" min="<?php echo htmlspecialchars($min_salida_busq, ENT_QUOTES, 'UTF-8'); ?>" max="<?php echo htmlspecialchars($max_fecha_str, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($busq_salida, ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
           </div>
           <button type="submit" name="buscar_disponibilidad" value="1" class="btn-search" style="width: 100%; padding: 10px; background: #0f172a; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
@@ -806,11 +853,11 @@ $ahora_dt       = new DateTime();
           <div class="form-row">
             <div class="input-group">
               <label>Entrada</label>
-              <input type="date" name="fecha_entrada" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($form['fecha_entrada'], ENT_QUOTES, 'UTF-8'); ?>" required>
+              <input type="date" id="form_fecha_entrada" name="fecha_entrada" min="<?php echo htmlspecialchars($hoy, ENT_QUOTES, 'UTF-8'); ?>" max="<?php echo htmlspecialchars($max_fecha_str, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($form['fecha_entrada'], ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
             <div class="input-group">
               <label>Salida</label>
-              <input type="date" name="fecha_salida" min="<?php echo $hoy; ?>" value="<?php echo htmlspecialchars($form['fecha_salida'], ENT_QUOTES, 'UTF-8'); ?>" required>
+              <input type="date" id="form_fecha_salida" name="fecha_salida" min="<?php echo htmlspecialchars($min_salida_form, ENT_QUOTES, 'UTF-8'); ?>" max="<?php echo htmlspecialchars($max_fecha_str, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($form['fecha_salida'], ENT_QUOTES, 'UTF-8'); ?>" required>
             </div>
           </div>
 
@@ -827,7 +874,7 @@ $ahora_dt       = new DateTime();
 
           <div class="input-group">
             <label>Notas (opcional)</label>
-            <textarea name="notas" placeholder="Solicitudes especiales..."><?php echo htmlspecialchars($form['notas'], ENT_QUOTES, 'UTF-8'); ?></textarea>
+            <textarea name="notas" maxlength="255" placeholder="Solicitudes especiales..."><?php echo htmlspecialchars($form['notas'], ENT_QUOTES, 'UTF-8'); ?></textarea>
           </div>
 
           <button type="submit" class="btn-save-reservation">Guardar reservación</button>
@@ -852,6 +899,48 @@ $ahora_dt       = new DateTime();
   </div>
 
   <script>
+    function sumarDiasISO(fechaISO, dias) {
+      const partes = fechaISO.split('-');
+      if (partes.length !== 3) return null;
+      const d = new Date(Date.UTC(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]) + dias));
+      if (Number.isNaN(d.getTime())) return null;
+      return d.toISOString().slice(0, 10);
+    }
+
+    function vincularRangoFechas(idEntrada, idSalida) {
+      const inputEntrada = document.getElementById(idEntrada);
+      const inputSalida  = document.getElementById(idSalida);
+      if (!inputEntrada || !inputSalida) return;
+
+      const actualizar = () => {
+        if (!inputEntrada.value) return;
+        const minSal = sumarDiasISO(inputEntrada.value, 1);
+        const maxSalPorEstancia = sumarDiasISO(inputEntrada.value, <?php echo MAX_NOCHES_ESTANCIA; ?>);
+        if (!minSal) return;
+
+        inputSalida.min = minSal;
+        const maxGlobal = <?php echo json_encode($max_fecha_str); ?>;
+        const maxEfectivo = (maxSalPorEstancia && maxSalPorEstancia < maxGlobal) ? maxSalPorEstancia : maxGlobal;
+        inputSalida.max = maxEfectivo;
+
+        if (inputSalida.min > inputSalida.max) {
+          inputSalida.min = inputSalida.max;
+        }
+        if (inputSalida.value && inputSalida.value < inputSalida.min) {
+          inputSalida.value = inputSalida.min;
+        }
+        if (inputSalida.value && inputSalida.value > inputSalida.max) {
+          inputSalida.value = inputSalida.max;
+        }
+      };
+
+      actualizar();
+      inputEntrada.addEventListener('change', actualizar);
+    }
+
+    vincularRangoFechas('disp_entrada', 'disp_salida');
+    vincularRangoFechas('form_fecha_entrada', 'form_fecha_salida');
+
     function filtrarReservaciones() {
       const query = document.getElementById('searchInput').value.toLowerCase();
       document.querySelectorAll('#reservationsTableBody tr.res-row').forEach(row => {

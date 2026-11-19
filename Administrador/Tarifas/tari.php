@@ -8,7 +8,7 @@ $hoy_str       = date('Y-m-d');
 $mensaje_exito = isset($_GET['ok']) ? "¡Nueva tarifa guardada con éxito!" : '';
 $mensaje_error = '';
 
-$tipos_permitidos = ['Sencilla', 'Doble', 'Suite'];
+$tipos_permitidos = ['Sencilla', 'Doble'];
 
 $form = [
     'tipo'          => 'Sencilla',
@@ -30,15 +30,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
         $form['precio']        = trim((string) ($_POST['precio'] ?? ''));
         $form['vigente_desde'] = trim((string) ($_POST['vigente_desde'] ?? ''));
 
-        $precio_validado = filter_var($form['precio'], FILTER_VALIDATE_FLOAT);
+        $precio_formato_ok = preg_match('/^\d+(?:\.\d{1,2})?$/', $form['precio']) === 1;
+        $mas_de_dos_dec    = preg_match('/^\d+\.\d{3,}$/', $form['precio']) === 1;
+        $precio_valor      = $precio_formato_ok ? (float) $form['precio'] : 0.0;
+
         $dt_nueva        = DateTime::createFromFormat('!Y-m-d', $form['vigente_desde']);
         $fecha_valida    = $dt_nueva && $dt_nueva->format('Y-m-d') === $form['vigente_desde'];
         $dt_hoy          = new DateTime($hoy_str);
 
         if ($form['tipo'] === '' || !in_array($form['tipo'], $tipos_permitidos, true)) {
             $mensaje_error = "Selecciona un tipo de habitación válido.";
-        } elseif ($precio_validado === false || !is_finite((float) $precio_validado) || $precio_validado <= 0 || $precio_validado > 999999.99) {
-            $mensaje_error = "El precio debe ser un número válido mayor a 0 y hasta 999,999.99.";
+        } elseif ($mas_de_dos_dec) {
+            $mensaje_error = "El precio por noche solo puede tener hasta 2 decimales; no se redondea automáticamente.";
+        } elseif (!$precio_formato_ok || !is_finite($precio_valor) || $precio_valor <= 0 || $precio_valor > 999999.99) {
+            $mensaje_error = "El precio debe ser un número válido mayor a 0 y hasta 999,999.99 (sin notación científica).";
         } elseif ($form['vigente_desde'] === '' || !$fecha_valida) {
             $mensaje_error = "La fecha de inicio no tiene un formato válido (AAAA-MM-DD).";
         } elseif ($dt_nueva > $dt_hoy) {
@@ -73,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                 $stmt_insertar = $conexion->prepare(
                     "INSERT INTO tarifa (tipo_habitacion, precio_noche, vigente, fecha_inicio, fecha_fin) VALUES (?, ?, 1, ?, NULL)"
                 );
-                $stmt_insertar->execute([$form['tipo'], round((float) $precio_validado, 2), $form['vigente_desde']]);
+                $stmt_insertar->execute([$form['tipo'], round($precio_valor, 2), $form['vigente_desde']]);
 
                 $conexion->commit();
                 header("Location: tari.php?ok=1");
@@ -215,7 +220,7 @@ try {
 
                 <div class="form-group">
                     <label for="roomPrice">Precio por noche</label>
-                    <input type="number" id="roomPrice" name="precio" step="0.01" min="0.01" max="999999.99" value="<?php echo htmlspecialchars($form['precio'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="$ 0.00" required>
+                    <input type="text" id="roomPrice" name="precio" inputmode="decimal" pattern="^\d+(?:\.\d{1,2})?$" value="<?php echo htmlspecialchars($form['precio'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="$ 0.00" required>
                 </div>
 
                 <div class="form-group">

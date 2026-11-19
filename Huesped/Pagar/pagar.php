@@ -90,7 +90,10 @@ $card_form = [
 
 // PAGAR
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $monto = round((float) ($_POST['monto'] ?? 0), 2);
+    $monto_raw = trim((string) ($_POST['monto'] ?? ''));
+    $monto_valido = preg_match('/^\d+(?:\.\d{1,2})?$/', $monto_raw) === 1;
+    $monto = $monto_valido ? round((float) $monto_raw, 2) : 0.0;
+
     $card_form['nombre_tarjeta'] = trim($_POST['nombre_tarjeta'] ?? '');
     $card_form['numero_tarjeta'] = trim($_POST['numero_tarjeta'] ?? '');
     $card_form['vencimiento']    = trim($_POST['vencimiento'] ?? '');
@@ -98,7 +101,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $digitos_tarjeta = preg_replace('/\D+/', '', $card_form['numero_tarjeta']);
 
-    if ($card_form['nombre_tarjeta'] === '' || mb_strlen($card_form['nombre_tarjeta']) > 100) {
+    if (!$monto_valido || $monto <= 0) {
+        $mensaje_error = "Ingresa un monto numérico válido mayor a 0 (hasta 2 decimales).";
+    } elseif ($card_form['nombre_tarjeta'] === '' || mb_strlen($card_form['nombre_tarjeta']) > 100) {
         $mensaje_error = "Ingresa un nombre válido en la tarjeta (máximo 100 caracteres).";
     } elseif (!validarLuhn($digitos_tarjeta)) {
         $mensaje_error = "El número de tarjeta no es válido.";

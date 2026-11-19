@@ -63,7 +63,7 @@ function disponibilidad(PDO $conexion, string $entrada, string $salida): array {
          AND NOT EXISTS (
              SELECT 1 FROM reservacion r
              WHERE r.numero_habitacion = h.numero_habitacion
-               AND r.estado = 'Activa'
+               AND r.estado IN ('Activa', 'En curso')
                AND r.fecha_entrada < :salida
                AND r.fecha_salida  > :entrada
          )
@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $fechas_ok) {
             $conexion->prepare("SELECT numero_habitacion FROM habitacion WHERE tipo_habitacion = ? FOR UPDATE")
                      ->execute([$tipo]);
 
-            // Primera habitación del tipo sin reservaciones activas que se traslapen
+            // Primera habitación del tipo sin reservaciones activas o en curso que se traslapen
             $solo_libres = ($entrada === date('Y-m-d')) ? " AND h.disponible = 1" : "";
             $stmt = $conexion->prepare(
                 "SELECT h.numero_habitacion
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $fechas_ok) {
                     AND NOT EXISTS (
                        SELECT 1 FROM reservacion r
                        WHERE r.numero_habitacion = h.numero_habitacion
-                         AND r.estado = 'Activa'
+                         AND r.estado IN ('Activa', 'En curso')
                          AND r.fecha_entrada < :salida
                          AND r.fecha_salida  > :entrada
                    )
