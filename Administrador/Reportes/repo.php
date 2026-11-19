@@ -13,6 +13,13 @@ function fecha(string $f): string {
     return date('d', $t) . ' ' . $abrev[date('n', $t) - 1] . ' ' . date('Y', $t);
 }
 
+function formatoMoneda(float $monto): string {
+    if ($monto < 0) {
+        return '-$' . number_format(abs($monto), 2);
+    }
+    return '$' . number_format($monto, 2);
+}
+
 // --- Periodo: mes (por defecto), anterior o rango ---
 $periodo_raw   = $_GET['periodo'] ?? 'mes';
 $periodo       = is_string($periodo_raw) ? $periodo_raw : 'mes';
@@ -61,21 +68,21 @@ $etiqueta = ($periodo === 'rango')
 
 $rango = ['desde' => $desde->format('Y-m-d'), 'hasta' => $hasta->format('Y-m-d')];
 
-// 1. Pagos del periodo (excluyendo pagos de reservaciones que terminaron canceladas)
+// 1. Movimientos registrados en pago dentro del periodo (incluye reservaciones canceladas y cargos/reembolsos)
 $st = $conexion->prepare("
     SELECT COALESCE(SUM(p.monto), 0) AS total,
+           COALESCE(SUM(CASE WHEN p.monto < 0 THEN p.monto ELSE 0 END), 0) AS devoluciones,
            COALESCE(SUM(CASE WHEN p.tipo_pago = 'Anticipo'    THEN p.monto ELSE 0 END), 0) AS anticipo,
            COALESCE(SUM(CASE WHEN p.tipo_pago = 'Liquidación' THEN p.monto ELSE 0 END), 0) AS liquidacion,
            COALESCE(SUM(CASE WHEN p.canal_pago LIKE '%línea%' THEN p.monto ELSE 0 END), 0) AS en_linea
     FROM pago p
-    JOIN reservacion r ON p.id_reservacion = r.id_reservacion
     WHERE p.fecha_hora >= :desde AND p.fecha_hora < :hasta
-      AND r.estado <> 'Cancelada'
 ");
 $st->execute($rango);
 $pagos = $st->fetch(PDO::FETCH_ASSOC);
 
 $total_ingresos      = (float) $pagos['total'];
+$total_devoluciones  = (float) $pagos['devoluciones'];
 $ingreso_anticipo    = (float) $pagos['anticipo'];
 $ingreso_liquidacion = (float) $pagos['liquidacion'];
 $ingreso_en_linea    = (float) $pagos['en_linea'];
@@ -158,13 +165,11 @@ foreach ($tipos_habitacion_lista as $tipo) {
     ];
 }
 
-// 4. Ingresos por semana dentro del periodo (excluyendo canceladas)
+// 4. Ingresos por semana dentro del periodo según movimientos en pago
 $st = $conexion->prepare("
     SELECT DATE(p.fecha_hora) AS dia, SUM(p.monto) AS total
     FROM pago p
-    JOIN reservacion r ON p.id_reservacion = r.id_reservacion
     WHERE p.fecha_hora >= :desde AND p.fecha_hora < :hasta
-      AND r.estado <> 'Cancelada'
     GROUP BY DATE(p.fecha_hora)
 ");
 $st->execute($rango);
@@ -197,6 +202,7 @@ for ($i = 0; $i < $dias; $i += 7) {
         a.filter-btn { text-decoration: none; display: inline-block; }
         .range-form { display: inline-flex; align-items: center; gap: 8px; margin-left: 12px; font-size: 13px; }
         .range-form input { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; }
+        .monto-negativo { color: #dc2626 !important; font-weight: 700; }
     </style>
 </head>
 <body>
@@ -241,8 +247,8 @@ for ($i = 0; $i < $dias; $i += 7) {
             </div>
 
             <div class="kpi-grid">
-                <div class="kpi-card card-green">
-                    <span class="kpi-value">$<?php echo number_format($total_ingresos, 2); ?></span>
+                <div class="kpi-card <?php echo $total_ingresos < 0 ? 'card-red' : 'card-green'; ?>">
+                    <span class="kpi-value <?php echo $total_ingresos < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($total_ingresos); ?></span>
                     <span class="kpi-label">Ingresos del periodo</span>
                 </div>
                 <div class="kpi-card card-blue">
@@ -295,11 +301,15 @@ for ($i = 0; $i < $dias; $i += 7) {
                 <h4>Ingresos por tipo de pago</h4>
                 <div class="summary-box">
                     <span>Anticipo</span>
-                    <strong>$<?php echo number_format($ingreso_anticipo, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_anticipo < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_anticipo); ?></strong>
                 </div>
                 <div class="summary-box">
                     <span>Liquidación</span>
-                    <strong>$<?php echo number_format($ingreso_liquidacion, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_liquidacion < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_liquidacion); ?></strong>
+                </div>
+                <div class="summary-box">
+                    <span>Devoluciones</span>
+                    <strong class="<?php echo $total_devoluciones < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($total_devoluciones); ?></strong>
                 </div>
             </div>
 
@@ -307,16 +317,16 @@ for ($i = 0; $i < $dias; $i += 7) {
                 <h4>Ingresos por canal</h4>
                 <div class="summary-box">
                     <span>Pasarela en línea</span>
-                    <strong>$<?php echo number_format($ingreso_en_linea, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_en_linea < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_en_linea); ?></strong>
                 </div>
                 <div class="summary-box">
                     <span>Terminal recepción</span>
-                    <strong>$<?php echo number_format($ingreso_terminal, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_terminal < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_terminal); ?></strong>
                 </div>
             </div>
 
             <p class="disclaimer-text">
-                Los ingresos excluyen pagos de reservaciones canceladas. La ocupación se calcula por noches reservadas dentro del periodo.
+                Los ingresos reflejan los movimientos registrados en el periodo (incluyendo devoluciones en rojo y negativo). La ocupación se calcula por noches reservadas dentro del periodo.
             </p>
         </aside>
 
@@ -340,7 +350,7 @@ for ($i = 0; $i < $dias; $i += 7) {
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: {
-                        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toLocaleString('es-MX') } }
+                        y: { beginAtZero: true, ticks: { callback: v => (v < 0 ? '-$' + Math.abs(v).toLocaleString('es-MX') : '$' + v.toLocaleString('es-MX')) } }
                     }
                 }
             });

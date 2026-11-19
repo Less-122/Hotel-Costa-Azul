@@ -8,7 +8,19 @@ verificarAcceso('huesped');
 $id_huesped = (int) $_SESSION['id_usuario'];
 $codigo     = trim($_REQUEST['codigo'] ?? '');
 
-$mensaje_exito = isset($_GET['ok']) ? "La reservación ha sido cancelada correctamente." : '';
+$mensaje_exito = '';
+if (isset($_GET['ok'])) {
+    $pen_aplicada = isset($_GET['penalizacion']) ? (float) $_GET['penalizacion'] : 0.0;
+    $dev_aplicada = isset($_GET['devolucion']) ? (float) $_GET['devolucion'] : 0.0;
+
+    $mensaje_exito = "La reservación ha sido cancelada correctamente.";
+    if ($pen_aplicada > 0) {
+        $mensaje_exito .= " Penalización aplicada: $" . number_format($pen_aplicada, 2) . " (primera noche).";
+    }
+    if ($dev_aplicada > 0) {
+        $mensaje_exito .= " Se registró una devolución de -$" . number_format($dev_aplicada, 2) . ".";
+    }
+}
 $mensaje_error = '';
 
 /**
@@ -25,34 +37,44 @@ function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72):
     return $horas_defecto;
 }
 
-// 1. Obtener la política de cancelación vigente de la BD como respaldo general
-$texto_politica = "Se permite cancelar sin penalización hasta 72 horas antes de la fecha de entrada.";
+/**
+ * Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
+ */
+function politicaCobraPrimeraNoche(string $descripcion): bool {
+    return (bool) preg_match('/primera\s+noche|1\s*noche|una\s+noche/iu', $descripcion);
+}
+
+// Respaldo solo en caso de que una reservación histórica no tenga id_politica asociado
+$texto_politica_respaldo = "Cancelación gratuita hasta 72 horas antes; después se cobra la primera noche.";
 try {
     $stmt_pol = $conexion->query(
         "SELECT descripcion FROM politica_cancelacion WHERE vigente = 1 ORDER BY id_politica DESC LIMIT 1"
     );
     $pol_vigente = $stmt_pol ? $stmt_pol->fetch(PDO::FETCH_ASSOC) : false;
     if ($pol_vigente && !empty($pol_vigente['descripcion'])) {
-        $texto_politica = $pol_vigente['descripcion'];
+        $texto_politica_respaldo = $pol_vigente['descripcion'];
     }
 } catch (PDOException $e) {
-    error_log("Error al consultar política de cancelación vigente: " . $e->getMessage());
+    error_log("Error al consultar política de cancelación de respaldo: " . $e->getMessage());
 }
 
-$horas_limite_politica = obtenerHorasAnticipacion($texto_politica, 72);
-
 // BUSCAR RESERVACIÓN Y DATOS FINANCIEROS
-$reservacion    = null;
-$costo_total    = 0.0;
-$total_pagado   = 0.0;
-$puede_cancelar = false;
-$motivo_bloqueo = '';
+$reservacion           = null;
+$texto_politica        = $texto_politica_respaldo;
+$horas_limite_politica = obtenerHorasAnticipacion($texto_politica, 72);
+$costo_total           = 0.0;
+$total_pagado          = 0.0;
+$monto_penalizacion    = 0.0;
+$monto_reembolso       = 0.0;
+$fuera_plazo_gratuito  = false;
+$puede_cancelar        = false;
+$motivo_bloqueo        = '';
 
 if ($codigo !== '') {
     try {
         $stmt = $conexion->prepare(
             "SELECT r.id_reservacion, r.numero_confirmacion, r.estado, r.fecha_entrada, r.fecha_salida,
-                    r.numero_habitacion, t.precio_noche,
+                    r.numero_habitacion, r.id_politica, r.notas, t.precio_noche,
                     p.descripcion AS politica_descripcion
              FROM reservacion r
              JOIN tarifa t ON r.id_tarifa = t.id_tarifa
@@ -63,17 +85,18 @@ if ($codigo !== '') {
         $reservacion = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($reservacion) {
-            // Si la reservación tiene su política asociada, usamos esa descripción y su límite
+            // Usar estrictamente la política guardada en la reservación (r.id_politica)
             if (!empty($reservacion['politica_descripcion'])) {
                 $texto_politica = $reservacion['politica_descripcion'];
-                $horas_limite_politica = obtenerHorasAnticipacion($texto_politica, 72);
             }
+            $horas_limite_politica = obtenerHorasAnticipacion($texto_politica, 72);
 
-            // Calcular costo total
+            // Calcular costo total y tarifa por noche
+            $precio_noche = round((float) $reservacion['precio_noche'], 2);
             $noches = max(1, (strtotime($reservacion['fecha_salida']) - strtotime($reservacion['fecha_entrada'])) / 86400);
-            $costo_total = round($noches * (float) $reservacion['precio_noche'], 2);
+            $costo_total = round($noches * $precio_noche, 2);
 
-            // Calcular total pagado
+            // Calcular saldo neto pagado actual
             $stmt_pago = $conexion->prepare("SELECT COALESCE(SUM(monto), 0) FROM pago WHERE id_reservacion = ?");
             $stmt_pago->execute([$reservacion['id_reservacion']]);
             $total_pagado = round((float) $stmt_pago->fetchColumn(), 2);
@@ -84,19 +107,28 @@ if ($codigo !== '') {
             $segundos_restantes = $fecha_entrada_dt->getTimestamp() - $ahora->getTimestamp();
             $horas_restantes = $segundos_restantes / 3600;
 
-            $etiqueta_plazo = ($horas_limite_politica % 24 === 0 && $horas_limite_politica >= 24)
-                ? ($horas_limite_politica / 24) . " día(s)"
-                : $horas_limite_politica . " hora(s)";
-
-            // Reglas de validación y bloqueo
+            // Reglas de validación y penalización
             if ($reservacion['estado'] !== 'Activa') {
                 $motivo_bloqueo = "La reservación ya se encuentra " . strtolower($reservacion['estado']) . ".";
             } elseif ($segundos_restantes <= 0) {
                 $motivo_bloqueo = "No se puede cancelar: la fecha de entrada ya pasó o la reservación ya dio inicio.";
             } elseif ($horas_restantes < $horas_limite_politica) {
-                $motivo_bloqueo = "No se puede cancelar en línea: el plazo límite según la política ({$etiqueta_plazo} antes) ha expirado.";
+                if (politicaCobraPrimeraNoche($texto_politica)) {
+                    $fuera_plazo_gratuito = true;
+                    $monto_penalizacion   = $precio_noche;
+                    $puede_cancelar       = true;
+                } else {
+                    $etiqueta_plazo = ($horas_limite_politica % 24 === 0 && $horas_limite_politica >= 24)
+                        ? ($horas_limite_politica / 24) . " día(s)"
+                        : $horas_limite_politica . " hora(s)";
+                    $motivo_bloqueo = "No se puede cancelar en línea: el plazo límite según la política ({$etiqueta_plazo} antes) ha expirado.";
+                }
             } else {
                 $puede_cancelar = true;
+            }
+
+            if ($puede_cancelar && $total_pagado > 0) {
+                $monto_reembolso = max(0.0, round($total_pagado - $monto_penalizacion, 2));
             }
         }
     } catch (PDOException $e) {
@@ -108,20 +140,67 @@ if ($codigo !== '') {
 // PROCESAR CANCELACIÓN (POST)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $reservacion && $puede_cancelar) {
     try {
+        $conexion->beginTransaction();
+
+        $notas_extra = [];
+
+        if ($monto_penalizacion > 0) {
+            $notas_extra[] = "[Penalización por cancelación tardía: $" . number_format($monto_penalizacion, 2) . " (1ra noche)]";
+
+            $cargo_a_registrar = max(0.0, round($monto_penalizacion - $total_pagado, 2));
+            if ($cargo_a_registrar > 0) {
+                $stmt_cargo = $conexion->prepare(
+                    "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                     VALUES (?, NOW(), 'Liquidación', 'Sistema', ?, NULL)"
+                );
+                $stmt_cargo->execute([$cargo_a_registrar, $reservacion['id_reservacion']]);
+            }
+        }
+
+        if ($monto_reembolso > 0) {
+            $monto_negativo = -abs($monto_reembolso);
+            $stmt_dev = $conexion->prepare(
+                "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                 VALUES (?, NOW(), 'Liquidación', 'Sistema', ?, NULL)"
+            );
+            $stmt_dev->execute([$monto_negativo, $reservacion['id_reservacion']]);
+            $notas_extra[] = "[Devolución registrada: -$" . number_format($monto_reembolso, 2) . "]";
+        }
+
+        $notas_actualizadas = trim(
+            ($reservacion['notas'] ?? '') .
+            (!empty($notas_extra) ? "\n" . implode("\n", $notas_extra) : '')
+        );
+
         $stmt_cancel = $conexion->prepare(
             "UPDATE reservacion
-             SET estado = 'Cancelada', modificado_por = ?, fecha_modificacion = NOW()
+             SET estado = 'Cancelada',
+                 notas = NULLIF(?, ''),
+                 modificado_por = ?,
+                 fecha_modificacion = NOW()
              WHERE numero_confirmacion = ? AND id_huesped = ? AND estado = 'Activa'"
         );
-        $stmt_cancel->execute([$id_huesped, $codigo, $id_huesped]);
+        $stmt_cancel->execute([$notas_actualizadas, $id_huesped, $codigo, $id_huesped]);
 
         if ($stmt_cancel->rowCount() === 1) {
-            header("Location: Cance.php?codigo=" . urlencode($codigo) . "&ok=1");
+            $conexion->commit();
+            $url_ok = "Cance.php?codigo=" . urlencode($codigo) . "&ok=1";
+            if ($monto_penalizacion > 0) {
+                $url_ok .= "&penalizacion=" . urlencode((string) $monto_penalizacion);
+            }
+            if ($monto_reembolso > 0) {
+                $url_ok .= "&devolucion=" . urlencode((string) $monto_reembolso);
+            }
+            header("Location: " . $url_ok);
             exit;
         } else {
+            $conexion->rollBack();
             $mensaje_error = "No se pudo procesar la cancelación. Verifique el estado de la reserva.";
         }
     } catch (PDOException $e) {
+        if ($conexion->inTransaction()) {
+            $conexion->rollBack();
+        }
         error_log("Error al cancelar reservación: " . $e->getMessage());
         $mensaje_error = "Error en la base de datos al intentar cancelar.";
     }
@@ -238,13 +317,17 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
           </div>
         </div>
 
-        <!-- Sección informativa de la Política de Cancelación y Estado -->
         <div class="policy-notice-box" style="background: #fcf8e3; border: 1px solid #faebcc; padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 14px; color: #8a6d3b;">
-          <strong><i class="fa-solid fa-circle-info"></i> Política de Cancelación (RN-01):</strong>
+          <strong><i class="fa-solid fa-circle-info"></i> Política de Cancelación aplicable a esta reserva:</strong>
           <p style="margin: 5px 0 0 0;"><?php echo htmlspecialchars($texto_politica, ENT_QUOTES, 'UTF-8'); ?></p>
+          <?php if (!$cancelada && $fuera_plazo_gratuito && $monto_penalizacion > 0): ?>
+            <p style="margin: 8px 0 0 0; color: #a94442; font-weight: 600;">
+              <i class="fa-solid fa-circle-exclamation"></i> El plazo de cancelación gratuita ya venció. Si cancelas ahora, se aplicará el cobro de la primera noche por <b>$<?php echo number_format($monto_penalizacion, 2); ?></b>.
+            </p>
+          <?php endif; ?>
           <?php if (!$cancelada && $total_pagado > 0): ?>
-            <p style="margin: 8px 0 0 0; color: #a94442; font-weight: 500;">
-              <i class="fa-solid fa-triangle-exclamation"></i> Tienes un monto pagado de $<?php echo number_format($total_pagado, 2); ?>. Al cancelar, acude a recepción para gestionar cualquier aclaración o reembolso aplicable.
+            <p style="margin: 8px 0 0 0; color: #2e6da4; font-weight: 500;">
+              <i class="fa-solid fa-rotate-left"></i> Monto pagado actual: <b>$<?php echo number_format($total_pagado, 2); ?></b>. Al cancelar se registrará una devolución de <b>-$<?php echo number_format($monto_reembolso, 2); ?></b>.
             </p>
           <?php endif; ?>
         </div>
@@ -259,7 +342,9 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
               <p style="color: #d9534f; font-size: 12px; margin-top: 5px; font-weight: 500;"><?php echo htmlspecialchars($motivo_bloqueo, ENT_QUOTES, 'UTF-8'); ?></p>
             </div>
           <?php else: ?>
-            <button type="button" class="btn-init-cancel" onclick="toggleModal(true)">Cancelar reservación</button>
+            <button type="button" class="btn-init-cancel" onclick="toggleModal(true)">
+              <?php echo $monto_penalizacion > 0 ? 'Cancelar con cargo ($' . number_format($monto_penalizacion, 2) . ')' : 'Cancelar reservación'; ?>
+            </button>
           <?php endif; ?>
         </div>
       <?php elseif ($codigo !== ''): ?>
@@ -271,12 +356,22 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
   <div id="confirmModal" class="modal-overlay" style="display: none;">
     <div class="modal-content">
       <h2>¿Estás seguro de cancelar?</h2>
-      <p>Se cancelará tu reserva y se registrará en el sistema. <?php if ($total_pagado > 0): ?>Recuerda que tienes <b>$<?php echo number_format($total_pagado, 2); ?></b> pagados vinculados a esta estancia.<?php endif; ?></p>
+      <p>
+        Se cancelará tu reserva y se registrará en el sistema.
+        <?php if ($monto_penalizacion > 0): ?>
+          <br><span style="color: #a94442; font-weight: 600;">Al haber vencido el plazo gratuito, se aplicará un cargo de $<?php echo number_format($monto_penalizacion, 2); ?> correspondiente a la primera noche.</span>
+        <?php endif; ?>
+        <?php if ($total_pagado > 0): ?>
+          <br>Monto pagado: <b>$<?php echo number_format($total_pagado, 2); ?></b> · Devolución a registrar: <b>-$<?php echo number_format($monto_reembolso, 2); ?></b>.
+        <?php endif; ?>
+      </p>
       <form method="POST">
         <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>">
         <div class="modal-buttons">
           <button type="button" class="btn-no" onclick="toggleModal(false)">No, volver</button>
-          <button type="submit" class="btn-yes">Sí, cancelar</button>
+          <button type="submit" class="btn-yes">
+            <?php echo $monto_penalizacion > 0 ? 'Sí, cancelar y aceptar cargo' : 'Sí, cancelar'; ?>
+          </button>
         </div>
       </form>
     </div>
