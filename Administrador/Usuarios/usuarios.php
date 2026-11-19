@@ -14,7 +14,6 @@ $mensaje_exito = $avisos[$_GET['ok'] ?? ''] ?? '';
 $mensaje_error = '';
 
 $id_sesion = (int) $_SESSION['id_usuario'];
-
 /**
  * Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,iniciando 
  * con una letra en mayúscula y continuando en minúsculas.
