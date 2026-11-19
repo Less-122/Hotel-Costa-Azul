@@ -11,8 +11,8 @@ function fecha(string $f, bool $con_anio = false): string {
 }
 
 /**
- * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
- * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
+- Extrae las horas mínimas de anticipación a partir de la descripción de la política.
+- Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
  */
 function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
     if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs)\b/iu', $descripcion, $m)) {
@@ -25,15 +25,15 @@ function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72):
 }
 
 /**
- * Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
+- Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
  */
 function politicaCobraPrimeraNoche(string $descripcion): bool {
     return (bool) preg_match('/primera\s+noche|1\s*noche|una\s+noche/iu', $descripcion);
 }
 
 /**
- * Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,
- * con cada palabra iniciando en mayúscula y continuando en minúsculas.
+- Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,
+- con cada palabra iniciando en mayúscula y continuando en minúsculas.
  */
 function validarNombreFormato(string $nombre): bool {
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
@@ -54,9 +54,15 @@ $id_usuario    = (int) $_SESSION['id_usuario'];
 $mensaje_exito = '';
 $mensaje_error = '';
 
-// Avisos tras guardar o cancelar (se redirige después del POST para que F5 no lo repita)
+// Avisos tras guardar, cancelar, registrar entrada o finalizar (se redirige después del POST para que F5 no lo repita)
 if (($_GET['ok'] ?? '') === '1' && preg_match('/^[A-Z0-9]{5}$/', $_GET['codigo'] ?? '')) {
     $mensaje_exito = "¡Reservación creada con éxito! Código asignado: " . $_GET['codigo'];
+} elseif (($_GET['entrada'] ?? '') === '1') {
+    $hab_ci = preg_match('/^[0-9A-Za-z]{1,5}$/', $_GET['hab'] ?? '') ? $_GET['hab'] : '';
+    $mensaje_exito = "Entrada registrada · Reservación marcada como En curso" . ($hab_ci !== '' ? " y habitación {$hab_ci} marcada como Ocupada." : ".");
+} elseif (($_GET['finalizada'] ?? '') === '1') {
+    $hab_co = preg_match('/^[0-9A-Za-z]{1,5}$/', $_GET['hab'] ?? '') ? $_GET['hab'] : '';
+    $mensaje_exito = "Reservación marcada como Finalizada" . ($hab_co !== '' ? " · Habitación {$hab_co} enviada a limpieza (Sucia)." : ".");
 } elseif (($_GET['cancelada'] ?? '') === '1') {
     $pen_aplicada = isset($_GET['penalizacion']) ? (float) $_GET['penalizacion'] : 0.0;
     $dev_aplicada = isset($_GET['devolucion']) ? (float) $_GET['devolucion'] : 0.0;
@@ -117,7 +123,7 @@ if (isset($_GET['buscar_disponibilidad'])) {
                            CASE WHEN NOT EXISTS (
                                SELECT 1 FROM reservacion r
                                WHERE r.numero_habitacion = h.numero_habitacion
-                                 AND r.estado = 'Activa'
+                                 AND r.estado IN ('Activa', 'En curso')
                                  AND r.fecha_entrada < ?
                                  AND r.fecha_salida  > ?
                            ) AND h.estado_limpieza <> 'Mantenimiento' THEN 1 ELSE 0 END
@@ -137,6 +143,128 @@ if (isset($_GET['buscar_disponibilidad'])) {
 
 $accion = ($_SERVER['REQUEST_METHOD'] === 'POST') ? ($_POST['accion'] ?? '') : '';
 
+// 0a. Registrar entrada del huésped: pasa la reservación a 'En curso' y marca la habitación como ocupada (disponible = 0)
+if ($accion === 'registrar_entrada') {
+    $id_res_ci = (int) ($_POST['id_reservacion'] ?? 0);
+
+    try {
+        $conexion->beginTransaction();
+
+        $st_ci = $conexion->prepare("
+            SELECT r.id_reservacion, r.numero_habitacion, r.estado, r.notas,
+                   h.estado_limpieza
+            FROM reservacion r
+            JOIN habitacion h ON h.numero_habitacion = r.numero_habitacion
+            WHERE r.id_reservacion = ?
+            FOR UPDATE
+        ");
+        $st_ci->execute([$id_res_ci]);
+        $res_ci = $st_ci->fetch(PDO::FETCH_ASSOC);
+
+        if (!$res_ci || $res_ci['estado'] !== 'Activa') {
+            throw new RuntimeException("Solo se puede registrar la entrada en reservaciones Activas.");
+        }
+        if (strtolower($res_ci['estado_limpieza']) === 'mantenimiento') {
+            throw new RuntimeException("No se puede registrar entrada: la habitación " . $res_ci['numero_habitacion'] . " está en Mantenimiento.");
+        }
+
+        $nota_ci = "[Entrada registrada: " . date('Y-m-d H:i') . "]";
+        $notas_nuevas = trim(($res_ci['notas'] ?? '') . "\n" . $nota_ci);
+
+        $st_upd_ci = $conexion->prepare("
+            UPDATE reservacion
+            SET estado = 'En curso',
+                notas = ?,
+                modificado_por = ?,
+                fecha_modificacion = NOW()
+            WHERE id_reservacion = ? AND estado = 'Activa'
+        ");
+        $st_upd_ci->execute([$notas_nuevas, $id_usuario, $id_res_ci]);
+
+        if ($st_upd_ci->rowCount() !== 1) {
+            throw new RuntimeException("No se pudo actualizar el estado a En curso.");
+        }
+
+        $conexion->prepare("
+            UPDATE habitacion
+            SET disponible = 0
+            WHERE numero_habitacion = ? AND estado_limpieza <> 'Mantenimiento'
+        ")->execute([$res_ci['numero_habitacion']]);
+
+        $conexion->commit();
+        header("Location: recep.php?entrada=1&hab=" . urlencode($res_ci['numero_habitacion']));
+        exit;
+    } catch (RuntimeException $e) {
+        if ($conexion->inTransaction()) { $conexion->rollBack(); }
+        $mensaje_error = $e->getMessage();
+    } catch (PDOException $e) {
+        if ($conexion->inTransaction()) { $conexion->rollBack(); }
+        error_log('Recepción - registrar entrada: ' . $e->getMessage());
+        $mensaje_error = "No se pudo registrar la entrada.";
+    }
+}
+
+// 0b. Finalizar reservación (Salida): pasa a 'Finalizada', libera para futuras reservas y marca habitación Sucia
+if ($accion === 'finalizar_reservacion') {
+    $id_res_co = (int) ($_POST['id_reservacion'] ?? 0);
+
+    try {
+        $conexion->beginTransaction();
+
+        $st_co = $conexion->prepare("
+            SELECT r.id_reservacion, r.numero_habitacion, r.estado, r.notas,
+                   h.estado_limpieza
+            FROM reservacion r
+            JOIN habitacion h ON h.numero_habitacion = r.numero_habitacion
+            WHERE r.id_reservacion = ?
+            FOR UPDATE
+        ");
+        $st_co->execute([$id_res_co]);
+        $res_co = $st_co->fetch(PDO::FETCH_ASSOC);
+
+        if (!$res_co || !in_array($res_co['estado'], ['Activa', 'En curso'], true)) {
+            throw new RuntimeException("Solo se pueden finalizar reservaciones Activas o En curso.");
+        }
+
+        $nota_co = "[Salida / Finalizada: " . date('Y-m-d H:i') . "]";
+        $notas_nuevas = trim(($res_co['notas'] ?? '') . "\n" . $nota_co);
+
+        $st_upd_res = $conexion->prepare("
+            UPDATE reservacion
+            SET estado = 'Finalizada',
+                notas = ?,
+                modificado_por = ?,
+                fecha_modificacion = NOW()
+            WHERE id_reservacion = ? AND estado IN ('Activa', 'En curso')
+        ");
+        $st_upd_res->execute([$notas_nuevas, $id_usuario, $id_res_co]);
+
+        if ($st_upd_res->rowCount() !== 1) {
+            throw new RuntimeException("No se pudo actualizar el estado de la reservación a Finalizada.");
+        }
+
+        $es_mant_co = (strtolower($res_co['estado_limpieza']) === 'mantenimiento');
+        if ($es_mant_co) {
+            $conexion->prepare("UPDATE habitacion SET disponible = 0 WHERE numero_habitacion = ?")
+                     ->execute([$res_co['numero_habitacion']]);
+        } else {
+            $conexion->prepare("UPDATE habitacion SET estado_limpieza = 'Sucia', disponible = 1 WHERE numero_habitacion = ?")
+                     ->execute([$res_co['numero_habitacion']]);
+        }
+
+        $conexion->commit();
+        header("Location: recep.php?finalizada=1&hab=" . urlencode($res_co['numero_habitacion']));
+        exit;
+    } catch (RuntimeException $e) {
+        if ($conexion->inTransaction()) { $conexion->rollBack(); }
+        $mensaje_error = $e->getMessage();
+    } catch (PDOException $e) {
+        if ($conexion->inTransaction()) { $conexion->rollBack(); }
+        error_log('Recepción - finalizar: ' . $e->getMessage());
+        $mensaje_error = "No se pudo finalizar la reservación.";
+    }
+}
+
 // 1. Cancelar una reservación (RF-09) aplicando la política de esa reservación (RN-01)
 if ($accion === 'cancelar_reservacion') {
     $id_reservacion_cancelar = (int) ($_POST['id_reservacion'] ?? 0);
@@ -155,7 +283,7 @@ if ($accion === 'cancelar_reservacion') {
         $info_res = $st_res->fetch(PDO::FETCH_ASSOC);
 
         if (!$info_res || $info_res['estado'] !== 'Activa') {
-            $mensaje_error = "No se pudo cancelar: la reservación no existe o ya no está activa.";
+            $mensaje_error = "No se pudo cancelar: solo se pueden cancelar reservaciones en estado Activa.";
         } else {
             $desc_res = !empty($info_res['politica_descripcion'])
                 ? $info_res['politica_descripcion']
@@ -325,18 +453,17 @@ if ($accion === 'nueva_reservacion') {
                 FROM habitacion h
                 WHERE h.tipo_habitacion = ?
                   AND h.estado_limpieza <> 'Mantenimiento'
-                  AND (? > ? OR h.disponible = 1)
                   AND NOT EXISTS (
                         SELECT 1 FROM reservacion r
                         WHERE r.numero_habitacion = h.numero_habitacion
-                          AND r.estado = 'Activa'
+                          AND r.estado IN ('Activa', 'En curso')
                           AND r.fecha_entrada < ?
                           AND r.fecha_salida  > ?
                   )
                 ORDER BY h.numero_habitacion
                 LIMIT 1
             ");
-            $st->execute([$form['tipo_habitacion'], $form['fecha_entrada'], $hoy, $form['fecha_salida'], $form['fecha_entrada']]);
+            $st->execute([$form['tipo_habitacion'], $form['fecha_salida'], $form['fecha_entrada']]);
             $numero_habitacion = $st->fetchColumn();
             if ($numero_habitacion === false) {
                 throw new RuntimeException("No hay habitaciones " . $form['tipo_habitacion'] . " disponibles en esas fechas.");
@@ -474,6 +601,8 @@ $ahora_dt       = new DateTime();
         <div class="filter-pills">
           <button class="pill active" onclick="filtrarPorEstado('todas', this)">Todas</button>
           <button class="pill" onclick="filtrarPorEstado('activa', this)">Activas</button>
+          <button class="pill" onclick="filtrarPorEstado('en curso', this)">En curso</button>
+          <button class="pill" onclick="filtrarPorEstado('finalizada', this)">Finalizadas</button>
           <button class="pill" onclick="filtrarPorEstado('cancelada', this)">Canceladas</button>
         </div>
       </div>
@@ -529,10 +658,28 @@ $ahora_dt       = new DateTime();
                 </td>
                 <td>
                   <?php if ($estado_raw === 'activa'): ?>
-                    <form method="POST" onsubmit="return confirmarCancelacion(this, '<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo $monto_pagado; ?>, <?php echo $penalizacion_fila; ?>, <?php echo htmlspecialchars(json_encode($desc_fila), ENT_QUOTES, 'UTF-8'); ?>);">
-                      <input type="hidden" name="accion" value="cancelar_reservacion">
+                    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px;">
+                      <form method="POST" style="margin: 0;">
+                        <input type="hidden" name="accion" value="registrar_entrada">
+                        <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
+                        <button type="submit" style="background: transparent; border: none; padding: 0; color: #0f2540; font-weight: 600; font-size: 13px; cursor: pointer; text-align: left;">Registrar entrada</button>
+                      </form>
+                      <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Finalizar reservación <?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?> y marcar habitación <?php echo htmlspecialchars($res['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?> como Sucia?');">
+                        <input type="hidden" name="accion" value="finalizar_reservacion">
+                        <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
+                        <button type="submit" class="btn-cancel-row" style="background: transparent; border: none; padding: 0; color: #1e293b; font-weight: 500; font-size: 13px; cursor: pointer; text-align: left;">Finalizar</button>
+                      </form>
+                      <form method="POST" style="margin: 0;" onsubmit="return confirmarCancelacion(this, '<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo $monto_pagado; ?>, <?php echo $penalizacion_fila; ?>, <?php echo htmlspecialchars(json_encode($desc_fila), ENT_QUOTES, 'UTF-8'); ?>);">
+                        <input type="hidden" name="accion" value="cancelar_reservacion">
+                        <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
+                        <button type="submit" class="btn-cancel-row" style="padding: 0; font-size: 13px;">Cancelar</button>
+                      </form>
+                    </div>
+                  <?php elseif ($estado_raw === 'en curso'): ?>
+                    <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Finalizar estadía de <?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?> y marcar habitación <?php echo htmlspecialchars($res['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?> como Sucia?');">
+                      <input type="hidden" name="accion" value="finalizar_reservacion">
                       <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
-                      <button type="submit" class="btn-cancel-row">Cancelar</button>
+                      <button type="submit" style="background: transparent; border: none; padding: 0; color: #0f2540; font-weight: 600; font-size: 13px; cursor: pointer; text-align: left;">Finalizar</button>
                     </form>
                   <?php endif; ?>
                 </td>

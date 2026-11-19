@@ -42,21 +42,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actua
             if ((int) $existe->fetchColumn() === 0) {
                 $mensaje_error = "La habitación no existe.";
             } else {
-                // RN-03: Antes de poner en Mantenimiento, verificar que no tenga reservaciones activas vigentes.
-                // Marcar como 'Ocupada' sí está permitido al recibir al huésped que hace check-in.
+                // RN-03: Marcar como 'Ocupada' está permitido al recibir al huésped que hace check-in.
+                // Para 'Mantenimiento', solo se bloquea si hay una reservación activa en curso hoy.
                 if ($limpieza === 'Mantenimiento') {
                     $hoy_fecha = date('Y-m-d');
                     $st_check = $conexion->prepare("
                         SELECT COUNT(*) FROM reservacion 
                         WHERE numero_habitacion = ? 
                           AND estado = 'Activa' 
-                          AND fecha_salida >= ?
+                          AND fecha_entrada <= ?
+                          AND fecha_salida > ?
                     ");
-                    $st_check->execute([$numero, $hoy_fecha]);
+                    $st_check->execute([$numero, $hoy_fecha, $hoy_fecha]);
                     $reservaciones_activas = (int) $st_check->fetchColumn();
 
                     if ($reservaciones_activas > 0) {
-                        $mensaje_error = "No se puede cambiar el estado a Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) asignada(s) (RN-03).";
+                        $mensaje_error = "No se puede cambiar el estado a Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) en curso hoy (RN-03).";
                     }
                 }
 
@@ -302,6 +303,14 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
 
   <!-- Script para interactuar con la selección de la tabla -->
   <script>
+    function marcarRadios(nombre, valor) {
+      document.querySelectorAll(`input[name="${nombre}"]`).forEach(radio => {
+        const match = radio.value === valor;
+        radio.checked = match;
+        radio.closest('.radio-option').classList.toggle('active', match);
+      });
+    }
+
     function seleccionarHabitacion(row) {
       // Quitar la clase selected de todas las filas
       document.querySelectorAll('.room-row').forEach(tr => tr.classList.remove('selected'));
@@ -317,28 +326,17 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
       document.getElementById('selectedRoomType').textContent = roomType;
       document.getElementById('inputRoomId').value = roomNum;
 
-      // Marcar radios de limpieza
-      document.querySelectorAll('input[name="cleanStatus"]').forEach(radio => {
-        if (radio.value === cleanState) {
-          radio.checked = true;
-          radio.closest('.radio-option').classList.add('active');
-        } else {
-          radio.checked = false;
-          radio.closest('.radio-option').classList.remove('active');
-        }
-      });
-
-      // Marcar radios de disponibilidad
-      document.querySelectorAll('input[name="dispStatus"]').forEach(radio => {
-        if (radio.value === dispState) {
-          radio.checked = true;
-          radio.closest('.radio-option').classList.add('active');
-        } else {
-          radio.checked = false;
-          radio.closest('.radio-option').classList.remove('active');
-        }
-      });
+      // Marcar radios de limpieza y disponibilidad
+      marcarRadios('cleanStatus', cleanState);
+      marcarRadios('dispStatus', dispState);
     }
+
+    // Sincronizar clase .active al cambiar manualmente cualquier radio
+    document.querySelectorAll('input[name="cleanStatus"], input[name="dispStatus"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        marcarRadios(radio.name, radio.value);
+      });
+    });
 
     // Filtros (Todas / Libres / Ocupadas / Sucias / Mantenimiento)
     document.querySelectorAll('.filter-pills .pill').forEach(pill => {
