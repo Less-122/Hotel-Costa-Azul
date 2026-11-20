@@ -1,5 +1,4 @@
 <?php
-session_start();
 require_once '../../config/conexion.php';
 require_once '../../config/sesion.php';
 
@@ -90,58 +89,62 @@ $card_form = [
 
 // PAGAR
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $monto_raw = trim((string) ($_POST['monto'] ?? ''));
-    $monto_valido = preg_match('/^\d+(?:\.\d{1,2})?$/', $monto_raw) === 1;
-    $monto = $monto_valido ? round((float) $monto_raw, 2) : 0.0;
-
-    $card_form['nombre_tarjeta'] = trim($_POST['nombre_tarjeta'] ?? '');
-    $card_form['numero_tarjeta'] = trim($_POST['numero_tarjeta'] ?? '');
-    $card_form['vencimiento']    = trim($_POST['vencimiento'] ?? '');
-    $card_form['cvv']            = trim($_POST['cvv'] ?? '');
-
-    $digitos_tarjeta = preg_replace('/\D+/', '', $card_form['numero_tarjeta']);
-
-    if (!$monto_valido || $monto <= 0) {
-        $mensaje_error = "Ingresa un monto numérico válido mayor a 0 (hasta 2 decimales).";
-    } elseif ($card_form['nombre_tarjeta'] === '' || mb_strlen($card_form['nombre_tarjeta']) > 100) {
-        $mensaje_error = "Ingresa un nombre válido en la tarjeta (máximo 100 caracteres).";
-    } elseif (!validarLuhn($digitos_tarjeta)) {
-        $mensaje_error = "El número de tarjeta no es válido.";
-    } elseif (!validarVencimiento($card_form['vencimiento'])) {
-        $mensaje_error = "La fecha de vencimiento no es válida o la tarjeta está vencida.";
-    } elseif (!preg_match('/^\d{3,4}$/', $card_form['cvv'])) {
-        $mensaje_error = "El código de seguridad (CVV) debe tener 3 o 4 dígitos.";
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        try {
-            // La transacción bloquea la reservación mientras se valida el saldo,
-            // así dos pagos simultáneos no pueden sobrepasarlo.
-            $conexion->beginTransaction();
-            $r = buscarReservacion($conexion, $codigo, $id_huesped, true);
+        $monto_raw = trim((string) ($_POST['monto'] ?? ''));
+        $monto_valido = preg_match('/^\d+(?:\.\d{1,2})?$/', $monto_raw) === 1;
+        $monto = $monto_valido ? round((float) $monto_raw, 2) : 0.0;
 
-            if (!$r || $r['estado'] !== 'Activa') {
-                $mensaje_error = "La reservación no existe, no es tuya o no está activa.";
-            } elseif ($monto <= 0 || $monto > $r['saldo']) {
-                $mensaje_error = "El monto debe ser mayor a 0 y no superar tu saldo pendiente ($"
-                               . number_format($r['saldo'], 2) . ").";
-            } else {
-                $tipo = (abs($monto - $r['saldo']) < 0.005) ? 'Liquidación' : 'Anticipo';
+        $card_form['nombre_tarjeta'] = trim($_POST['nombre_tarjeta'] ?? '');
+        $card_form['numero_tarjeta'] = trim($_POST['numero_tarjeta'] ?? '');
+        $card_form['vencimiento']    = trim($_POST['vencimiento'] ?? '');
+        $card_form['cvv']            = trim($_POST['cvv'] ?? '');
 
-                $conexion->prepare(
-                    "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                     VALUES (?, NOW(), ?, 'Pasarela en línea', ?, NULL)"
-                )->execute([$monto, $tipo, $r['id_reservacion']]);
+        $digitos_tarjeta = preg_replace('/\D+/', '', $card_form['numero_tarjeta']);
 
-                $conexion->commit();
-                header("Location: pagar.php?codigo=" . urlencode($codigo) . "&ok=1");
-                exit;
+        if (!$monto_valido || $monto <= 0) {
+            $mensaje_error = "Ingresa un monto numérico válido mayor a 0 (hasta 2 decimales).";
+        } elseif ($card_form['nombre_tarjeta'] === '' || mb_strlen($card_form['nombre_tarjeta']) > 100) {
+            $mensaje_error = "Ingresa un nombre válido en la tarjeta (máximo 100 caracteres).";
+        } elseif (!validarLuhn($digitos_tarjeta)) {
+            $mensaje_error = "El número de tarjeta no es válido.";
+        } elseif (!validarVencimiento($card_form['vencimiento'])) {
+            $mensaje_error = "La fecha de vencimiento no es válida o la tarjeta está vencida.";
+        } elseif (!preg_match('/^\d{3,4}$/', $card_form['cvv'])) {
+            $mensaje_error = "El código de seguridad (CVV) debe tener 3 o 4 dígitos.";
+        } else {
+            try {
+                // La transacción bloquea la reservación mientras se valida el saldo,
+                // así dos pagos simultáneos no pueden sobrepasarlo.
+                $conexion->beginTransaction();
+                $r = buscarReservacion($conexion, $codigo, $id_huesped, true);
+
+                if (!$r || $r['estado'] !== 'Activa') {
+                    $mensaje_error = "La reservación no existe, no es tuya o no está activa.";
+                } elseif ($monto <= 0 || $monto > $r['saldo']) {
+                    $mensaje_error = "El monto debe ser mayor a 0 y no superar tu saldo pendiente ($"
+                                   . number_format($r['saldo'], 2) . ").";
+                } else {
+                    $tipo = (abs($monto - $r['saldo']) < 0.005) ? 'Liquidación' : 'Anticipo';
+
+                    $conexion->prepare(
+                        "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                         VALUES (?, NOW(), ?, 'Pasarela en línea', ?, NULL)"
+                    )->execute([$monto, $tipo, $r['id_reservacion']]);
+
+                    $conexion->commit();
+                    header("Location: pagar.php?codigo=" . urlencode($codigo) . "&ok=1");
+                    exit;
+                }
+            } catch (PDOException $e) {
+                error_log('Pagar - procesar pago: ' . $e->getMessage());
+                $mensaje_error = "No se pudo procesar el pago.";
             }
-        } catch (PDOException $e) {
-            error_log('Pagar - procesar pago: ' . $e->getMessage());
-            $mensaje_error = "No se pudo procesar el pago.";
-        }
 
-        if ($conexion->inTransaction()) {
-            $conexion->rollBack();
+            if ($conexion->inTransaction()) {
+                $conexion->rollBack();
+            }
         }
     }
 }
@@ -273,6 +276,7 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
           <h2>Datos de la tarjeta</h2>
           <!-- Los datos sensibles de la tarjeta se validan en el servidor y no se almacenan -->
           <form method="POST" autocomplete="off">
+            <?php echo campoCsrf(); ?>
             <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>">
 
             <div class="input-group">

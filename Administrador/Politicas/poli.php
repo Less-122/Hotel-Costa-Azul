@@ -23,57 +23,61 @@ $form = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $form['descripcion']   = trim((string) ($_POST['descripcion'] ?? ''));
-    $form['vigente_desde'] = trim((string) ($_POST['vigente_desde'] ?? ''));
-
-    $dt_nueva = DateTime::createFromFormat('!Y-m-d', $form['vigente_desde']);
-    $fecha_valida = $dt_nueva && $dt_nueva->format('Y-m-d') === $form['vigente_desde'];
-    $dt_hoy = new DateTime($hoy_str);
-
-    if ($form['descripcion'] === '' || $form['vigente_desde'] === '') {
-        $mensaje_error = "Completa todos los campos.";
-    } elseif (mb_strlen($form['descripcion']) > 500) {
-        $mensaje_error = "La descripción no puede exceder los 500 caracteres.";
-    } elseif (!$fecha_valida) {
-        $mensaje_error = "La fecha de inicio no tiene un formato válido (AAAA-MM-DD).";
-    } elseif ($dt_nueva > $dt_hoy) {
-        $mensaje_error = "La fecha de inicio no puede ser futura porque la política entra en vigor al guardarse.";
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        try {
-            // Las operaciones van juntas y con bloqueo para validar coherencia con la política vigente
-            $conexion->beginTransaction();
+        $form['descripcion']   = trim((string) ($_POST['descripcion'] ?? ''));
+        $form['vigente_desde'] = trim((string) ($_POST['vigente_desde'] ?? ''));
 
-            $st_vig = $conexion->query(
-                "SELECT id_politica, fecha_inicio FROM politica_cancelacion WHERE vigente = 1 ORDER BY id_politica DESC LIMIT 1 FOR UPDATE"
-            );
-            $politica_actual = $st_vig->fetch(PDO::FETCH_ASSOC);
+        $dt_nueva = DateTime::createFromFormat('!Y-m-d', $form['vigente_desde']);
+        $fecha_valida = $dt_nueva && $dt_nueva->format('Y-m-d') === $form['vigente_desde'];
+        $dt_hoy = new DateTime($hoy_str);
 
-            if ($politica_actual && !empty($politica_actual['fecha_inicio'])) {
-                $dt_inicio_actual = DateTime::createFromFormat('!Y-m-d', substr((string) $politica_actual['fecha_inicio'], 0, 10));
-                if ($dt_inicio_actual && $dt_nueva < $dt_inicio_actual) {
-                    $conexion->rollBack();
-                    $mensaje_error = "La fecha de vigencia (" . fecha($form['vigente_desde']) . ") no puede ser anterior al inicio de la política actual (" . fecha($politica_actual['fecha_inicio']) . ").";
-                    goto render_poli;
+        if ($form['descripcion'] === '' || $form['vigente_desde'] === '') {
+            $mensaje_error = "Completa todos los campos.";
+        } elseif (mb_strlen($form['descripcion']) > 500) {
+            $mensaje_error = "La descripción no puede exceder los 500 caracteres.";
+        } elseif (!$fecha_valida) {
+            $mensaje_error = "La fecha de inicio no tiene un formato válido (AAAA-MM-DD).";
+        } elseif ($dt_nueva > $dt_hoy) {
+            $mensaje_error = "La fecha de inicio no puede ser futura porque la política entra en vigor al guardarse.";
+        } else {
+            try {
+                // Las operaciones van juntas y con bloqueo para validar coherencia con la política vigente
+                $conexion->beginTransaction();
+
+                $st_vig = $conexion->query(
+                    "SELECT id_politica, fecha_inicio FROM politica_cancelacion WHERE vigente = 1 ORDER BY id_politica DESC LIMIT 1 FOR UPDATE"
+                );
+                $politica_actual = $st_vig->fetch(PDO::FETCH_ASSOC);
+
+                if ($politica_actual && !empty($politica_actual['fecha_inicio'])) {
+                    $dt_inicio_actual = DateTime::createFromFormat('!Y-m-d', substr((string) $politica_actual['fecha_inicio'], 0, 10));
+                    if ($dt_inicio_actual && $dt_nueva < $dt_inicio_actual) {
+                        $conexion->rollBack();
+                        $mensaje_error = "La fecha de vigencia (" . fecha($form['vigente_desde']) . ") no puede ser anterior al inicio de la política actual (" . fecha($politica_actual['fecha_inicio']) . ").";
+                        goto render_poli;
+                    }
                 }
+
+                $conexion->prepare("UPDATE politica_cancelacion SET vigente = 0, fecha_fin = ? WHERE vigente = 1")
+                         ->execute([$form['vigente_desde']]);
+
+                $conexion->prepare("INSERT INTO politica_cancelacion (descripcion, vigente, fecha_inicio, fecha_fin) VALUES (?, 1, ?, NULL)")
+                         ->execute([$form['descripcion'], $form['vigente_desde']]);
+
+                $conexion->commit();
+
+                // Evita que al refrescar la página se reenvíe el formulario
+                header("Location: poli.php?ok=1");
+                exit;
+            } catch (PDOException $e) {
+                if ($conexion->inTransaction()) {
+                    $conexion->rollBack();
+                }
+                error_log('Políticas - guardar: ' . $e->getMessage());
+                $mensaje_error = "No se pudo guardar la política.";
             }
-
-            $conexion->prepare("UPDATE politica_cancelacion SET vigente = 0, fecha_fin = ? WHERE vigente = 1")
-                     ->execute([$form['vigente_desde']]);
-
-            $conexion->prepare("INSERT INTO politica_cancelacion (descripcion, vigente, fecha_inicio, fecha_fin) VALUES (?, 1, ?, NULL)")
-                     ->execute([$form['descripcion'], $form['vigente_desde']]);
-
-            $conexion->commit();
-
-            // Evita que al refrescar la página se reenvíe el formulario
-            header("Location: poli.php?ok=1");
-            exit;
-        } catch (PDOException $e) {
-            if ($conexion->inTransaction()) {
-                $conexion->rollBack();
-            }
-            error_log('Políticas - guardar: ' . $e->getMessage());
-            $mensaje_error = "No se pudo guardar la política.";
         }
     }
 }
@@ -172,6 +176,7 @@ $lista_politicas = $conexion->query(
             <p class="form-subtitle">Al guardar, la política actual pasa a histórica.</p>
 
             <form id="policyForm" method="POST">
+                <?php echo campoCsrf(); ?>
                 <div class="form-group">
                     <label for="policyDesc">Descripción de reglas y penalizaciones</label>
                     <textarea id="policyDesc" name="descripcion" rows="5" maxlength="500" placeholder="Escribe las reglas..." required><?php echo htmlspecialchars($form['descripcion'], ENT_QUOTES, 'UTF-8'); ?></textarea>

@@ -62,6 +62,39 @@ function loginPorRoles(array $permitidos): string {
         : 'Huesped/Login_regis/login.php');
 }
 
+/** Obtiene o genera el token CSRF de la sesión actual. */
+function obtenerCsrfToken(): string {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/** Devuelve el input hidden listo para insertar dentro de cualquier formulario POST. */
+function campoCsrf(): string {
+    $token = htmlspecialchars(obtenerCsrfToken(), ENT_QUOTES, 'UTF-8');
+    return '<input type="hidden" name="csrf_token" value="' . $token . '">';
+}
+
+/** Valida de forma segura contra timing attacks el token CSRF recibido por POST. */
+function validarCsrfToken(?string $token): bool {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    if (
+        empty($_SESSION['csrf_token']) ||
+        !is_string($_SESSION['csrf_token']) ||
+        !is_string($token) ||
+        $token === ''
+    ) {
+        return false;
+    }
+    return hash_equals($_SESSION['csrf_token'], $token);
+}
+
 /**
  * Sincroniza el rol actual del usuario con la tabla `usuario` cada cierto intervalo
  * para reflejar cambios de rol o eliminación de cuenta sin consultar en cada petición.

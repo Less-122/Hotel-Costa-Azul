@@ -1,5 +1,4 @@
 <?php
-session_start();
 require_once "../config/conexion.php";
 require_once "../config/sesion.php";
 
@@ -15,33 +14,37 @@ $rutas = [
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $correo   = trim($_POST['correo'] ?? '');
-    $password = $_POST['password'] ?? '';
-
-    if ($correo === '' || $password === '') {
-        $error = "Complete todos los campos.";
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        $stmt = $conexion->prepare(
-            "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo"
-        );
-        $stmt->execute(['correo' => $correo]);
-        $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
+        $correo   = trim($_POST['correo'] ?? '');
+        $password = $_POST['password'] ?? '';
 
-        if (!$usuario || !password_verify($password, $usuario['password'])) {
-            $error = "Correo o contraseña incorrectos.";
+        if ($correo === '' || $password === '') {
+            $error = "Complete todos los campos.";
         } else {
-            $rol = strtolower($usuario['rol']);
+            $stmt = $conexion->prepare(
+                "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo"
+            );
+            $stmt->execute(['correo' => $correo]);
+            $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!isset($rutas[$rol])) {
-                $error = "Este portal es exclusivo para el personal del hotel.";
+            if (!$usuario || !password_verify($password, $usuario['password'])) {
+                $error = "Correo o contraseña incorrectos.";
             } else {
-                session_regenerate_id(true);
-                $_SESSION['id_usuario'] = $usuario['id_usuario'];
-                $_SESSION['nombre']     = $usuario['nombre'];
-                $_SESSION['rol']        = $rol;
+                $rol = strtolower($usuario['rol']);
 
-                header("Location: " . $base_url . $rutas[$rol]);
-                exit;
+                if (!isset($rutas[$rol])) {
+                    $error = "Este portal es exclusivo para el personal del hotel.";
+                } else {
+                    session_regenerate_id(true);
+                    $_SESSION['id_usuario'] = $usuario['id_usuario'];
+                    $_SESSION['nombre']     = $usuario['nombre'];
+                    $_SESSION['rol']        = $rol;
+
+                    header("Location: " . $base_url . $rutas[$rol]);
+                    exit;
+                }
             }
         }
     }
@@ -84,11 +87,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             <?php if (!empty($error)): ?>
                 <div class="alert-error">
                     <i class="fa-solid fa-triangle-exclamation"></i>
-                    <span><?php echo htmlspecialchars($error); ?></span>
+                    <span><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></span>
                 </div>
             <?php endif; ?>
 
             <form action="login_personal.php" method="POST" class="login-form">
+                <?php echo campoCsrf(); ?>
                 <div class="input-group">
                     <label for="correo">Correo Electrónico</label>
                     <div class="input-wrapper">

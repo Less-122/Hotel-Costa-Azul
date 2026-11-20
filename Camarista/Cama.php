@@ -10,6 +10,12 @@ $estados_validos = ['Limpia', 'Sucia', 'Mantenimiento'];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_habitacion']) && isset($_POST['nuevo_estado'])) {
     header('Content-Type: application/json; charset=utf-8');
 
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Error de validación de seguridad. Recarga la página e inténtalo de nuevo.']);
+        exit();
+    }
+
     $numero_habitacion = trim($_POST['id_habitacion']);
     $nuevo_estado      = trim($_POST['nuevo_estado']);
 
@@ -86,6 +92,7 @@ foreach ($habitaciones as $h) {
 }
 
 $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
+$csrf_token     = obtenerCsrfToken();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -201,6 +208,8 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
 
   <!-- Script para interactuar con la Base de Datos vía fetch / AJAX -->
   <script>
+    const csrfToken = <?php echo json_encode($csrf_token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+
     function toggleCard(headerElement) {
       const card = headerElement.closest('.room-card');
       const body = card.querySelector('.room-card-body');
@@ -226,6 +235,7 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
       const formData = new FormData();
       formData.append('id_habitacion', roomNumber);
       formData.append('nuevo_estado', newState);
+      formData.append('csrf_token', csrfToken);
 
       fetch('', {
         method: 'POST',

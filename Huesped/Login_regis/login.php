@@ -12,39 +12,43 @@ $errorMsg = '';
 $correo = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $correo = trim($_POST['correo'] ?? '');
-    $password = $_POST['password'] ?? '';
-
-    if (!empty($correo) && !empty($password)) {
-        try {
-            $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo";
-            $stmt = $conexion->prepare($sql);
-            $stmt->bindParam(':correo', $correo);
-            $stmt->execute();
-            $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            // Solo se acepta el hash guardado en la BD (password_hash / password_verify)
-            if ($usuario && password_verify($password, $usuario['password'])) {
-                if (strtolower($usuario['rol']) !== 'huesped') {
-                    $errorMsg = "Esta cuenta es del personal del hotel. Ingresa por el portal de personal.";
-                } else {
-                    session_regenerate_id(true);
-                    $_SESSION['id_usuario'] = $usuario['id_usuario'];
-                    $_SESSION['nombre'] = $usuario['nombre'];
-                    $_SESSION['rol'] = 'Huesped';
-
-                    header("Location: ../Reserva/Reser.php");
-                    exit();
-                }
-            } else {
-                $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos.";
-            }
-        } catch (PDOException $e) {
-            error_log('Login huésped: ' . $e->getMessage());
-            $errorMsg = "Error en el sistema. Inténtalo de nuevo.";
-        }
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $errorMsg = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        $errorMsg = "Por favor, completa todos los campos.";
+        $correo = trim($_POST['correo'] ?? '');
+        $password = $_POST['password'] ?? '';
+
+        if (!empty($correo) && !empty($password)) {
+            try {
+                $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo";
+                $stmt = $conexion->prepare($sql);
+                $stmt->bindParam(':correo', $correo);
+                $stmt->execute();
+                $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                // Solo se acepta el hash guardado en la BD (password_hash / password_verify)
+                if ($usuario && password_verify($password, $usuario['password'])) {
+                    if (strtolower($usuario['rol']) !== 'huesped') {
+                        $errorMsg = "Esta cuenta es del personal del hotel. Ingresa por el portal de personal.";
+                    } else {
+                        session_regenerate_id(true);
+                        $_SESSION['id_usuario'] = $usuario['id_usuario'];
+                        $_SESSION['nombre'] = $usuario['nombre'];
+                        $_SESSION['rol'] = 'Huesped';
+
+                        header("Location: ../Reserva/Reser.php");
+                        exit();
+                    }
+                } else {
+                    $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos.";
+                }
+            } catch (PDOException $e) {
+                error_log('Login huésped: ' . $e->getMessage());
+                $errorMsg = "Error en el sistema. Inténtalo de nuevo.";
+            }
+        } else {
+            $errorMsg = "Por favor, completa todos los campos.";
+        }
     }
 }
 
@@ -94,6 +98,7 @@ $registroOk = (($_GET['registro'] ?? '') === 'ok');
       <?php endif; ?>
 
       <form id="loginForm" class="login-form" method="POST" action="">
+        <?php echo campoCsrf(); ?>
         <div class="input-group">
           <label for="username">Correo electrónico</label>
           <div class="input-wrapper">

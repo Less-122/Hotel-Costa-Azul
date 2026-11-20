@@ -50,55 +50,59 @@ $error  = '';
 $valores = ['nombre' => '', 'telefono' => '', 'correo' => ''];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $valores['nombre']   = trim($_POST['nombre'] ?? '');
-    $valores['telefono'] = trim($_POST['telefono'] ?? '');
-    $valores['correo']   = trim($_POST['correo'] ?? '');
-    $password            = $_POST['password'] ?? '';
-    $confirmar           = $_POST['confirmar'] ?? '';
-
-    if ($valores['nombre'] === '' || $valores['telefono'] === '' || $valores['correo'] === '' || $password === '') {
-        $error = 'Completa todos los campos.';
-    } elseif (mb_strlen($valores['nombre']) > 100) {
-        $error = 'El nombre es demasiado largo (máximo 100 caracteres).';
-    } elseif (!validarNombreFormato($valores['nombre'])) {
-        $error = 'Escribe un nombre válido usando letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).';
-    } elseif (!preg_match('/^\d{10}$/', $valores['telefono'])) {
-        $error = 'El teléfono debe tener 10 dígitos.';
-    } elseif (!filter_var($valores['correo'], FILTER_VALIDATE_EMAIL) || strlen($valores['correo']) > 80) {
-        $error = 'Escribe un correo electrónico válido.';
-    } elseif (strlen($password) < 8) {
-        $error = 'La contraseña debe tener al menos 8 caracteres.';
-    } elseif (strlen($password) > 72) {
-        // bcrypt (el algoritmo de password_hash) solo considera los primeros 72 bytes
-        $error = 'La contraseña no puede pasar de 72 caracteres.';
-    } elseif ($password !== $confirmar) {
-        $error = 'Las contraseñas no coinciden.';
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $error = 'Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.';
     } else {
-        // La contraseña se convierte en hash AQUÍ, antes de tocar la base de datos.
-        // A la BD solo llega el hash; el texto original nunca se guarda.
-        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $valores['nombre']   = trim($_POST['nombre'] ?? '');
+        $valores['telefono'] = trim($_POST['telefono'] ?? '');
+        $valores['correo']   = trim($_POST['correo'] ?? '');
+        $password            = $_POST['password'] ?? '';
+        $confirmar           = $_POST['confirmar'] ?? '';
 
-        try {
-            // El rol se fija en el servidor: nadie puede registrarse como admin/recepción desde este formulario
-            $stmt = $conexion->prepare(
-                "INSERT INTO usuario (nombre, contacto, correo, password, rol)
-                 VALUES (:nombre, :contacto, :correo, :password, 'Huesped')"
-            );
-            $stmt->execute([
-                ':nombre'   => $valores['nombre'],
-                ':contacto' => $valores['telefono'],
-                ':correo'   => $valores['correo'],
-                ':password' => $hash,
-            ]);
+        if ($valores['nombre'] === '' || $valores['telefono'] === '' || $valores['correo'] === '' || $password === '') {
+            $error = 'Completa todos los campos.';
+        } elseif (mb_strlen($valores['nombre']) > 100) {
+            $error = 'El nombre es demasiado largo (máximo 100 caracteres).';
+        } elseif (!validarNombreFormato($valores['nombre'])) {
+            $error = 'Escribe un nombre válido usando letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).';
+        } elseif (!preg_match('/^\d{10}$/', $valores['telefono'])) {
+            $error = 'El teléfono debe tener 10 dígitos.';
+        } elseif (!filter_var($valores['correo'], FILTER_VALIDATE_EMAIL) || strlen($valores['correo']) > 80) {
+            $error = 'Escribe un correo electrónico válido.';
+        } elseif (strlen($password) < 8) {
+            $error = 'La contraseña debe tener al menos 8 caracteres.';
+        } elseif (strlen($password) > 72) {
+            // bcrypt (el algoritmo de password_hash) solo considera los primeros 72 bytes
+            $error = 'La contraseña no puede pasar de 72 caracteres.';
+        } elseif ($password !== $confirmar) {
+            $error = 'Las contraseñas no coinciden.';
+        } else {
+            // La contraseña se convierte en hash AQUÍ, antes de tocar la base de datos.
+            // A la BD solo llega el hash; el texto original nunca se guarda.
+            $hash = password_hash($password, PASSWORD_DEFAULT);
 
-            header("Location: login.php?registro=ok");
-            exit();
-        } catch (PDOException $e) {
-            if ($e->getCode() === '23000') {
-                $error = 'Ese correo ya está registrado. Intenta iniciar sesión.';
-            } else {
-                error_log('Registro de huésped: ' . $e->getMessage());
-                $error = 'No se pudo completar el registro. Inténtalo de nuevo.';
+            try {
+                // El rol se fija en el servidor: nadie puede registrarse como admin/recepción desde este formulario
+                $stmt = $conexion->prepare(
+                    "INSERT INTO usuario (nombre, contacto, correo, password, rol)
+                     VALUES (:nombre, :contacto, :correo, :password, 'Huesped')"
+                );
+                $stmt->execute([
+                    ':nombre'   => $valores['nombre'],
+                    ':contacto' => $valores['telefono'],
+                    ':correo'   => $valores['correo'],
+                    ':password' => $hash,
+                ]);
+
+                header("Location: login.php?registro=ok");
+                exit();
+            } catch (PDOException $e) {
+                if ($e->getCode() === '23000') {
+                    $error = 'Ese correo ya está registrado. Intenta iniciar sesión.';
+                } else {
+                    error_log('Registro de huésped: ' . $e->getMessage());
+                    $error = 'No se pudo completar el registro. Inténtalo de nuevo.';
+                }
             }
         }
     }
@@ -154,6 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php endif; ?>
 
       <form id="registerForm" class="register-form" method="POST" action="" onsubmit="return validarContrasenas();">
+        <?php echo campoCsrf(); ?>
 
         <!-- Nombre completo -->
         <div class="input-group">

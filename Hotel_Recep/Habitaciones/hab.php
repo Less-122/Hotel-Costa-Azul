@@ -25,52 +25,56 @@ if (($_GET['ok'] ?? '') === '1' && preg_match('/^[0-9A-Za-z]{1,5}$/', $_GET['hab
 }
 // Actualizar limpieza y disponibilidad de una habitación
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actualizar_habitacion') {
-    $numero   = trim($_POST['id_habitacion'] ?? '');
-    $limpieza = $_POST['cleanStatus'] ?? '';
-    $disp     = $_POST['dispStatus'] ?? '';
-
-    if ($numero === '' || !in_array($limpieza, $limpieza_validas, true) || !in_array($disp, $disp_validas, true)) {
-        $mensaje_error = "Datos no válidos para actualizar la habitación.";
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        // En la BD, disponible = 1 (Libre) / 0 (Ocupada). Una habitación en mantenimiento nunca queda libre.
-        $forzada_mant = ($limpieza === 'Mantenimiento' && $disp === 'Libre');
-        $disponible   = ($disp === 'Libre' && $limpieza !== 'Mantenimiento') ? 1 : 0;
+        $numero   = trim($_POST['id_habitacion'] ?? '');
+        $limpieza = $_POST['cleanStatus'] ?? '';
+        $disp     = $_POST['dispStatus'] ?? '';
 
-        try {
-            $existe = $conexion->prepare("SELECT COUNT(*) FROM habitacion WHERE numero_habitacion = ?");
-            $existe->execute([$numero]);
-            if ((int) $existe->fetchColumn() === 0) {
-                $mensaje_error = "La habitación no existe.";
-            } else {
-                // RN-03: Marcar como 'Ocupada' está permitido al recibir al huésped que hace check-in.
-                // Para 'Mantenimiento', solo se bloquea si hay una reservación activa en curso hoy.
-                if ($limpieza === 'Mantenimiento') {
-                    $hoy_fecha = date('Y-m-d');
-                    $st_check = $conexion->prepare("
-                        SELECT COUNT(*) FROM reservacion 
-                        WHERE numero_habitacion = ? 
-                          AND estado = 'Activa' 
-                          AND fecha_entrada <= ?
-                          AND fecha_salida > ?
-                    ");
-                    $st_check->execute([$numero, $hoy_fecha, $hoy_fecha]);
-                    $reservaciones_activas = (int) $st_check->fetchColumn();
+        if ($numero === '' || !in_array($limpieza, $limpieza_validas, true) || !in_array($disp, $disp_validas, true)) {
+            $mensaje_error = "Datos no válidos para actualizar la habitación.";
+        } else {
+            // En la BD, disponible = 1 (Libre) / 0 (Ocupada). Una habitación en mantenimiento nunca queda libre.
+            $forzada_mant = ($limpieza === 'Mantenimiento' && $disp === 'Libre');
+            $disponible   = ($disp === 'Libre' && $limpieza !== 'Mantenimiento') ? 1 : 0;
 
-                    if ($reservaciones_activas > 0) {
-                        $mensaje_error = "No se puede cambiar el estado a Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) en curso hoy (RN-03).";
+            try {
+                $existe = $conexion->prepare("SELECT COUNT(*) FROM habitacion WHERE numero_habitacion = ?");
+                $existe->execute([$numero]);
+                if ((int) $existe->fetchColumn() === 0) {
+                    $mensaje_error = "La habitación no existe.";
+                } else {
+                    // RN-03: Marcar como 'Ocupada' está permitido al recibir al huésped que hace check-in.
+                    // Para 'Mantenimiento', solo se bloquea si hay una reservación activa en curso hoy.
+                    if ($limpieza === 'Mantenimiento') {
+                        $hoy_fecha = date('Y-m-d');
+                        $st_check = $conexion->prepare("
+                            SELECT COUNT(*) FROM reservacion 
+                            WHERE numero_habitacion = ? 
+                              AND estado = 'Activa' 
+                              AND fecha_entrada <= ?
+                              AND fecha_salida > ?
+                        ");
+                        $st_check->execute([$numero, $hoy_fecha, $hoy_fecha]);
+                        $reservaciones_activas = (int) $st_check->fetchColumn();
+
+                        if ($reservaciones_activas > 0) {
+                            $mensaje_error = "No se puede cambiar el estado a Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) en curso hoy (RN-03).";
+                        }
+                    }
+
+                    if (empty($mensaje_error)) {
+                        $conexion->prepare("UPDATE habitacion SET estado_limpieza = ?, disponible = ? WHERE numero_habitacion = ?")
+                                 ->execute([$limpieza, $disponible, $numero]);
+                        header("Location: hab.php?ok=1&hab=" . urlencode($numero) . ($forzada_mant ? "&mant=1" : ""));
+                        exit();
                     }
                 }
-
-                if (empty($mensaje_error)) {
-                    $conexion->prepare("UPDATE habitacion SET estado_limpieza = ?, disponible = ? WHERE numero_habitacion = ?")
-                             ->execute([$limpieza, $disponible, $numero]);
-                    header("Location: hab.php?ok=1&hab=" . urlencode($numero) . ($forzada_mant ? "&mant=1" : ""));
-                    exit();
-                }
+            } catch (PDOException $e) {
+                error_log('Recepción - actualizar habitación: ' . $e->getMessage());
+                $mensaje_error = "No se pudo actualizar la habitación.";
             }
-        } catch (PDOException $e) {
-            error_log('Recepción - actualizar habitación: ' . $e->getMessage());
-            $mensaje_error = "No se pudo actualizar la habitación.";
         }
     }
 }
@@ -259,6 +263,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
         </div>
 
         <form id="roomUpdateForm" method="POST" action="">
+          <?php echo campoCsrf(); ?>
           <input type="hidden" name="accion" value="actualizar_habitacion">
           <input type="hidden" id="inputRoomId" name="id_habitacion" value="<?php echo htmlspecialchars($habitaciones[0]['numero'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
           

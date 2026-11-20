@@ -53,6 +53,11 @@ function validarNombreFormato(string $nombre): bool {
 $form = ['id_usuario' => 0, 'nombre' => '', 'contacto' => '', 'correo' => '', 'rol' => 'Recepcionista'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
+        goto render_page;
+    }
+
     $id = (int) ($_POST['id_usuario'] ?? 0);
 
     // ELIMINAR
@@ -137,6 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $mensaje_error = "Rol no válido.";
         } elseif (($id === 0 || $password !== '') && mb_strlen($password) < 8) {
             $mensaje_error = "La contraseña debe tener al menos 8 caracteres.";
+        } elseif (($id === 0 || $password !== '') && strlen($password) > 72) {
+            $mensaje_error = "La contraseña no puede exceder los 72 bytes.";
         } elseif ($id > 0 && $id === $id_sesion && $form['rol'] !== $usuario_actual['rol']) {
             $mensaje_error = "No puedes cambiar tu propio rol desde este panel.";
         } else {
@@ -289,6 +296,7 @@ $usuarios = $conexion->query(
                                         <a href="usuarios.php?editar=<?php echo (int) $u['id_usuario']; ?>" class="btn-link">Editar</a>
                                         <?php if (!$es_propio): ?>
                                             <form method="POST" onsubmit="return confirm('¿Eliminar a este usuario?');">
+                                                <?php echo campoCsrf(); ?>
                                                 <input type="hidden" name="accion" value="eliminar">
                                                 <input type="hidden" name="id_usuario" value="<?php echo (int) $u['id_usuario']; ?>">
                                                 <button type="submit" class="btn-link btn-danger">Eliminar</button>
@@ -319,6 +327,7 @@ $usuarios = $conexion->query(
             </p>
 
             <form method="POST">
+                <?php echo campoCsrf(); ?>
                 <input type="hidden" name="id_usuario" value="<?php echo (int) $form['id_usuario']; ?>">
 
                 <div class="form-group">

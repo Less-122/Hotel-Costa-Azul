@@ -197,7 +197,14 @@ if (isset($_GET['buscar_disponibilidad'])) {
     }
 }
 
-$accion = ($_SERVER['REQUEST_METHOD'] === 'POST') ? ($_POST['accion'] ?? '') : '';
+$accion = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
+    } else {
+        $accion = $_POST['accion'] ?? '';
+    }
+}
 
 // 0a. Registrar entrada del huésped: pasa la reservación a 'En curso' y marca la habitación como ocupada (disponible = 0)
 if ($accion === 'registrar_entrada') {
@@ -722,16 +729,19 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
                   <?php if ($estado_raw === 'activa'): ?>
                     <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px;">
                       <form method="POST" style="margin: 0;">
+                        <?php echo campoCsrf(); ?>
                         <input type="hidden" name="accion" value="registrar_entrada">
                         <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
                         <button type="submit" style="background: transparent; border: none; padding: 0; color: #0f2540; font-weight: 600; font-size: 13px; cursor: pointer; text-align: left;">Registrar entrada</button>
                       </form>
                       <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Finalizar reservación <?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?> y marcar habitación <?php echo htmlspecialchars($res['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?> como Sucia?');">
+                        <?php echo campoCsrf(); ?>
                         <input type="hidden" name="accion" value="finalizar_reservacion">
                         <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
                         <button type="submit" class="btn-cancel-row" style="background: transparent; border: none; padding: 0; color: #1e293b; font-weight: 500; font-size: 13px; cursor: pointer; text-align: left;">Finalizar</button>
                       </form>
                       <form method="POST" style="margin: 0;" onsubmit="return confirmarCancelacion(this, '<?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo $monto_pagado; ?>, <?php echo $penalizacion_fila; ?>, <?php echo htmlspecialchars(json_encode($desc_fila), ENT_QUOTES, 'UTF-8'); ?>);">
+                        <?php echo campoCsrf(); ?>
                         <input type="hidden" name="accion" value="cancelar_reservacion">
                         <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
                         <button type="submit" class="btn-cancel-row" style="padding: 0; font-size: 13px;">Cancelar</button>
@@ -739,6 +749,7 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
                     </div>
                   <?php elseif ($estado_raw === 'en curso'): ?>
                     <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Finalizar estadía de <?php echo htmlspecialchars($res['codigo'], ENT_QUOTES, 'UTF-8'); ?> y marcar habitación <?php echo htmlspecialchars($res['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?> como Sucia?');">
+                      <?php echo campoCsrf(); ?>
                       <input type="hidden" name="accion" value="finalizar_reservacion">
                       <input type="hidden" name="id_reservacion" value="<?php echo (int) $res['id_reservacion']; ?>">
                       <button type="submit" style="background: transparent; border: none; padding: 0; color: #0f2540; font-weight: 600; font-size: 13px; cursor: pointer; text-align: left;">Finalizar</button>
@@ -831,6 +842,7 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
         </div>
 
         <form id="newReservationForm" method="POST">
+          <?php echo campoCsrf(); ?>
           <input type="hidden" name="accion" value="nueva_reservacion">
 
           <div class="input-group">

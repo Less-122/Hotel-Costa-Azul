@@ -1,5 +1,4 @@
 <?php
-session_start();
 require_once '../../config/conexion.php';
 require_once '../../config/sesion.php';
 
@@ -138,71 +137,75 @@ if ($codigo !== '') {
 }
 
 // PROCESAR CANCELACIÓN (POST)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $reservacion && $puede_cancelar) {
-    try {
-        $conexion->beginTransaction();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
+    } elseif ($reservacion && $puede_cancelar) {
+        try {
+            $conexion->beginTransaction();
 
-        $notas_extra = [];
+            $notas_extra = [];
 
-        if ($monto_penalizacion > 0) {
-            $notas_extra[] = "[Penalización por cancelación tardía: $" . number_format($monto_penalizacion, 2) . " (1ra noche)]";
+            if ($monto_penalizacion > 0) {
+                $notas_extra[] = "[Penalización por cancelación tardía: $" . number_format($monto_penalizacion, 2) . " (1ra noche)]";
 
-            $cargo_a_registrar = max(0.0, round($monto_penalizacion - $total_pagado, 2));
-            if ($cargo_a_registrar > 0) {
-                $stmt_cargo = $conexion->prepare(
+                $cargo_a_registrar = max(0.0, round($monto_penalizacion - $total_pagado, 2));
+                if ($cargo_a_registrar > 0) {
+                    $stmt_cargo = $conexion->prepare(
+                        "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                         VALUES (?, NOW(), 'Liquidación', 'Sistema', ?, NULL)"
+                    );
+                    $stmt_cargo->execute([$cargo_a_registrar, $reservacion['id_reservacion']]);
+                }
+            }
+
+            if ($monto_reembolso > 0) {
+                $monto_negativo = -abs($monto_reembolso);
+                $stmt_dev = $conexion->prepare(
                     "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
                      VALUES (?, NOW(), 'Liquidación', 'Sistema', ?, NULL)"
                 );
-                $stmt_cargo->execute([$cargo_a_registrar, $reservacion['id_reservacion']]);
+                $stmt_dev->execute([$monto_negativo, $reservacion['id_reservacion']]);
+                $notas_extra[] = "[Devolución registrada: -$" . number_format($monto_reembolso, 2) . "]";
             }
-        }
 
-        if ($monto_reembolso > 0) {
-            $monto_negativo = -abs($monto_reembolso);
-            $stmt_dev = $conexion->prepare(
-                "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                 VALUES (?, NOW(), 'Liquidación', 'Sistema', ?, NULL)"
+            $notas_actualizadas = trim(
+                ($reservacion['notas'] ?? '') .
+                (!empty($notas_extra) ? "\n" . implode("\n", $notas_extra) : '')
             );
-            $stmt_dev->execute([$monto_negativo, $reservacion['id_reservacion']]);
-            $notas_extra[] = "[Devolución registrada: -$" . number_format($monto_reembolso, 2) . "]";
-        }
 
-        $notas_actualizadas = trim(
-            ($reservacion['notas'] ?? '') .
-            (!empty($notas_extra) ? "\n" . implode("\n", $notas_extra) : '')
-        );
+            $stmt_cancel = $conexion->prepare(
+                "UPDATE reservacion
+                 SET estado = 'Cancelada',
+                     notas = NULLIF(?, ''),
+                     modificado_por = ?,
+                     fecha_modificacion = NOW()
+                 WHERE numero_confirmacion = ? AND id_huesped = ? AND estado = 'Activa'"
+            );
+            $stmt_cancel->execute([$notas_actualizadas, $id_huesped, $codigo, $id_huesped]);
 
-        $stmt_cancel = $conexion->prepare(
-            "UPDATE reservacion
-             SET estado = 'Cancelada',
-                 notas = NULLIF(?, ''),
-                 modificado_por = ?,
-                 fecha_modificacion = NOW()
-             WHERE numero_confirmacion = ? AND id_huesped = ? AND estado = 'Activa'"
-        );
-        $stmt_cancel->execute([$notas_actualizadas, $id_huesped, $codigo, $id_huesped]);
-
-        if ($stmt_cancel->rowCount() === 1) {
-            $conexion->commit();
-            $url_ok = "Cance.php?codigo=" . urlencode($codigo) . "&ok=1";
-            if ($monto_penalizacion > 0) {
-                $url_ok .= "&penalizacion=" . urlencode((string) $monto_penalizacion);
+            if ($stmt_cancel->rowCount() === 1) {
+                $conexion->commit();
+                $url_ok = "Cance.php?codigo=" . urlencode($codigo) . "&ok=1";
+                if ($monto_penalizacion > 0) {
+                    $url_ok .= "&penalizacion=" . urlencode((string) $monto_penalizacion);
+                }
+                if ($monto_reembolso > 0) {
+                    $url_ok .= "&devolucion=" . urlencode((string) $monto_reembolso);
+                }
+                header("Location: " . $url_ok);
+                exit;
+            } else {
+                $conexion->rollBack();
+                $mensaje_error = "No se pudo procesar la cancelación. Verifique el estado de la reserva.";
             }
-            if ($monto_reembolso > 0) {
-                $url_ok .= "&devolucion=" . urlencode((string) $monto_reembolso);
+        } catch (PDOException $e) {
+            if ($conexion->inTransaction()) {
+                $conexion->rollBack();
             }
-            header("Location: " . $url_ok);
-            exit;
-        } else {
-            $conexion->rollBack();
-            $mensaje_error = "No se pudo procesar la cancelación. Verifique el estado de la reserva.";
+            error_log("Error al cancelar reservación: " . $e->getMessage());
+            $mensaje_error = "Error en la base de datos al intentar cancelar.";
         }
-    } catch (PDOException $e) {
-        if ($conexion->inTransaction()) {
-            $conexion->rollBack();
-        }
-        error_log("Error al cancelar reservación: " . $e->getMessage());
-        $mensaje_error = "Error en la base de datos al intentar cancelar.";
     }
 }
 
@@ -366,6 +369,7 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
         <?php endif; ?>
       </p>
       <form method="POST">
+        <?php echo campoCsrf(); ?>
         <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>">
         <div class="modal-buttons">
           <button type="button" class="btn-no" onclick="toggleModal(false)">No, volver</button>

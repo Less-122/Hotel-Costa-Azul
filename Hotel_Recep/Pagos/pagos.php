@@ -53,61 +53,65 @@ $codigo_buscado = strtoupper(trim($_GET['codigo'] ?? ''));
 
 // 1. Registrar un pago
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'registrar_pago') {
-    $codigo_buscado = strtoupper(trim($_POST['codigo_reservacion'] ?? ''));
-    $tipo_pago = $_POST['tipo_pago'] ?? '';
-    $monto_raw = trim((string) ($_POST['monto'] ?? ''));
-    $id_recepcionista = (int) ($_SESSION['id_usuario'] ?? 0);
-
-    // Validación estricta del formato del monto: solo números enteros o con hasta 2 decimales (ej. 1200 o 1200.50)
-    if (!preg_match('/^\d+(\.\d{1,2})?$/', $monto_raw)) {
-        $mensaje_error = "El formato del monto no es válido. Utiliza un número válido (ej. 1200 o 1200.50).";
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        $monto = round((float) $monto_raw, 2);
+        $codigo_buscado = strtoupper(trim($_POST['codigo_reservacion'] ?? ''));
+        $tipo_pago = $_POST['tipo_pago'] ?? '';
+        $monto_raw = trim((string) ($_POST['monto'] ?? ''));
+        $id_recepcionista = (int) ($_SESSION['id_usuario'] ?? 0);
 
-        if (!in_array($tipo_pago, $tipos_pago, true)) {
-            $mensaje_error = "Tipo de pago no válido.";
-        } elseif ($monto <= 0) {
-            $mensaje_error = "Por favor ingresa un monto válido mayor a 0.";
-        } elseif ($id_recepcionista <= 0) {
-            $mensaje_error = "Sesión de usuario no válida.";
+        // Validación estricta del formato del monto: solo números enteros o con hasta 2 decimales (ej. 1200 o 1200.50)
+        if (!preg_match('/^\d+(\.\d{1,2})?$/', $monto_raw)) {
+            $mensaje_error = "El formato del monto no es válido. Utiliza un número válido (ej. 1200 o 1200.50).";
         } else {
-            $res = $codigo_buscado !== '' ? cargarReservacion($conexion, $codigo_buscado) : null;
-            if (!$res) {
-                $mensaje_error = "No se encontró ninguna reservación con el código: " . $codigo_buscado;
-            } elseif (!in_array($res['estado'], $estados_pagables, true)) {
-                $mensaje_error = "Solo se pueden registrar pagos en reservaciones activas o en curso.";
+            $monto = round((float) $monto_raw, 2);
+
+            if (!in_array($tipo_pago, $tipos_pago, true)) {
+                $mensaje_error = "Tipo de pago no válido.";
+            } elseif ($monto <= 0) {
+                $mensaje_error = "Por favor ingresa un monto válido mayor a 0.";
+            } elseif ($id_recepcionista <= 0) {
+                $mensaje_error = "Sesión de usuario no válida.";
             } else {
-                try {
-                    $conexion->beginTransaction();
+                $res = $codigo_buscado !== '' ? cargarReservacion($conexion, $codigo_buscado) : null;
+                if (!$res) {
+                    $mensaje_error = "No se encontró ninguna reservación con el código: " . $codigo_buscado;
+                } elseif (!in_array($res['estado'], $estados_pagables, true)) {
+                    $mensaje_error = "Solo se pueden registrar pagos en reservaciones activas o en curso.";
+                } else {
+                    try {
+                        $conexion->beginTransaction();
 
-                    // Se bloquea la reservación mientras se calcula el saldo, para no sobrepasar el total
-                    $conexion->prepare("SELECT id_reservacion FROM reservacion WHERE id_reservacion = ? FOR UPDATE")
-                             ->execute([$res['id_reservacion']]);
-                    $saldo = round(totalReservacion($res) - totalPagado($conexion, (int) $res['id_reservacion']), 2);
+                        // Se bloquea la reservación mientras se calcula el saldo, para no sobrepasar el total
+                        $conexion->prepare("SELECT id_reservacion FROM reservacion WHERE id_reservacion = ? FOR UPDATE")
+                                 ->execute([$res['id_reservacion']]);
+                        $saldo = round(totalReservacion($res) - totalPagado($conexion, (int) $res['id_reservacion']), 2);
 
-                    if ($monto > $saldo) {
-                        $conexion->rollBack();
-                        $mensaje_error = "El monto ($" . number_format($monto, 2) . ") supera el saldo pendiente ($" . number_format(max(0, $saldo), 2) . ").";
-                    } elseif ($tipo_pago === 'Liquidación' && abs($monto - $saldo) >= 0.005) {
-                        $conexion->rollBack();
-                        $mensaje_error = "Una liquidación debe cubrir todo el saldo pendiente ($" . number_format($saldo, 2) . ").";
-                    } elseif ($tipo_pago === 'Anticipo' && abs($monto - $saldo) < 0.005) {
-                        $conexion->rollBack();
-                        $mensaje_error = "Este monto cubre todo el saldo: regístralo como Liquidación.";
-                    } else {
-                        $conexion->prepare("
-                            INSERT INTO pago (monto, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                            VALUES (?, ?, 'Terminal recepción', ?, ?)
-                        ")->execute([$monto, $tipo_pago, $res['id_reservacion'], $id_recepcionista]);
-                        $conexion->commit();
+                        if ($monto > $saldo) {
+                            $conexion->rollBack();
+                            $mensaje_error = "El monto ($" . number_format($monto, 2) . ") supera el saldo pendiente ($" . number_format(max(0, $saldo), 2) . ").";
+                        } elseif ($tipo_pago === 'Liquidación' && abs($monto - $saldo) >= 0.005) {
+                            $conexion->rollBack();
+                            $mensaje_error = "Una liquidación debe cubrir todo el saldo pendiente ($" . number_format($saldo, 2) . ").";
+                        } elseif ($tipo_pago === 'Anticipo' && abs($monto - $saldo) < 0.005) {
+                            $conexion->rollBack();
+                            $mensaje_error = "Este monto cubre todo el saldo: regístralo como Liquidación.";
+                        } else {
+                            $conexion->prepare("
+                                INSERT INTO pago (monto, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                                VALUES (?, ?, 'Terminal recepción', ?, ?)
+                            ")->execute([$monto, $tipo_pago, $res['id_reservacion'], $id_recepcionista]);
+                            $conexion->commit();
 
-                        header("Location: pagos.php?codigo=" . urlencode($codigo_buscado) . "&ok=1");
-                        exit();
+                            header("Location: pagos.php?codigo=" . urlencode($codigo_buscado) . "&ok=1");
+                            exit();
+                        }
+                    } catch (PDOException $e) {
+                        if ($conexion->inTransaction()) { $conexion->rollBack(); }
+                        error_log('Recepción - registrar pago: ' . $e->getMessage());
+                        $mensaje_error = "No se pudo registrar el pago. Inténtalo de nuevo.";
                     }
-                } catch (PDOException $e) {
-                    if ($conexion->inTransaction()) { $conexion->rollBack(); }
-                    error_log('Recepción - registrar pago: ' . $e->getMessage());
-                    $mensaje_error = "No se pudo registrar el pago. Inténtalo de nuevo.";
                 }
             }
         }
@@ -250,6 +254,7 @@ $rol_usuario = ucfirst($_SESSION['rol'] ?? 'Recepcionista');
           <h2>Registrar pago</h2>
 
           <form method="POST" action="" id="registerPaymentForm">
+            <?php echo campoCsrf(); ?>
             <input type="hidden" name="accion" value="registrar_pago">
             <input type="hidden" name="codigo_reservacion" value="<?php echo htmlspecialchars($codigo_buscado, ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" name="tipo_pago" id="tipoPagoInput" value="Anticipo">
