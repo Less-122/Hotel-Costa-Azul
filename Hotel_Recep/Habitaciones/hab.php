@@ -46,13 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actua
                     $mensaje_error = "La habitación no existe.";
                 } else {
                     // RN-03: Marcar como 'Ocupada' está permitido al recibir al huésped que hace check-in.
-                    // Para 'Mantenimiento', solo se bloquea si hay una reservación activa en curso hoy.
+                    // Para 'Mantenimiento', solo se bloquea si hay una reservación activa o en curso hoy.
                     if ($limpieza === 'Mantenimiento') {
                         $hoy_fecha = date('Y-m-d');
                         $st_check = $conexion->prepare("
                             SELECT COUNT(*) FROM reservacion 
                             WHERE numero_habitacion = ? 
-                              AND estado = 'Activa' 
+                              AND estado IN ('Activa', 'En curso') 
                               AND fecha_entrada <= ?
                               AND fecha_salida > ?
                         ");
@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'actua
                         $reservaciones_activas = (int) $st_check->fetchColumn();
 
                         if ($reservaciones_activas > 0) {
-                            $mensaje_error = "No se puede cambiar el estado a Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) en curso hoy (RN-03).";
+                            $mensaje_error = "No se puede cambiar el estado a Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) o en curso hoy (RN-03).";
                         }
                     }
 

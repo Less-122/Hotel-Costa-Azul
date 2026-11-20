@@ -32,13 +32,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_habitacion']) && i
             exit();
         }
 
-        // RN-03: Solo bloquear Mantenimiento si hay una reservación activa en curso hoy (no reservas futuras lejanas)
+        // RN-03: Solo bloquear Mantenimiento si hay una reservación activa o en curso hoy (no reservas futuras lejanas)
         if ($nuevo_estado === 'Mantenimiento') {
             $hoy_fecha = date('Y-m-d');
             $st_check = $conexion->prepare("
                 SELECT COUNT(*) FROM reservacion 
                 WHERE numero_habitacion = ? 
-                  AND estado = 'Activa' 
+                  AND estado IN ('Activa', 'En curso') 
                   AND fecha_entrada <= ?
                   AND fecha_salida > ?
             ");
@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_habitacion']) && i
             if ($reservaciones_activas > 0) {
                 echo json_encode([
                     'success' => false, 
-                    'error' => "No se puede poner en Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) en curso hoy (RN-03)."
+                    'error' => "No se puede poner en Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) o en curso hoy (RN-03)."
                 ]);
                 exit();
             }

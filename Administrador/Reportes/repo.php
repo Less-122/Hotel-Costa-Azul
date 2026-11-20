@@ -92,14 +92,14 @@ $ingreso_terminal    = $total_ingresos - $ingreso_en_linea;
 $st = $conexion->prepare("
     SELECT estado, COUNT(*)
     FROM reservacion
-    WHERE estado IN ('Activa', 'Cancelada')
+    WHERE estado IN ('Activa', 'En curso', 'Cancelada')
       AND fecha_registro >= :desde AND fecha_registro < :hasta
     GROUP BY estado
 ");
 $st->execute($rango);
 $reservas = $st->fetchAll(PDO::FETCH_KEY_PAIR);
 
-$reservas_activas    = $reservas['Activa'] ?? 0;
+$reservas_activas    = ($reservas['Activa'] ?? 0) + ($reservas['En curso'] ?? 0);
 $reservas_canceladas = $reservas['Cancelada'] ?? 0;
 
 // 3. Ocupación calculada por noches reservadas dentro del periodo seleccionado
@@ -107,11 +107,11 @@ $total_dias_periodo = max(1, $desde->diff($hasta)->days);
 $total_habitaciones_hotel = (int) $conexion->query("SELECT COUNT(*) FROM habitacion WHERE estado_limpieza <> 'Mantenimiento'")->fetchColumn();
 $capacitacion_total_noches = $total_dias_periodo * max(1, $total_habitaciones_hotel);
 
-// Consultar reservaciones activas que cruzan el periodo para sumar sus noches dentro del rango
+// Consultar reservaciones activas o en curso que cruzan el periodo para sumar sus noches dentro del rango
 $st_noches = $conexion->prepare("
     SELECT fecha_entrada, fecha_salida
     FROM reservacion
-    WHERE estado = 'Activa'
+    WHERE estado IN ('Activa', 'En curso')
       AND fecha_entrada < :hasta
       AND fecha_salida > :desde
 ");
@@ -139,7 +139,7 @@ $st_t_occ = $conexion->prepare("
     SELECT r.fecha_entrada, r.fecha_salida
     FROM reservacion r
     JOIN habitacion h ON r.numero_habitacion = h.numero_habitacion
-    WHERE h.tipo_habitacion = ? AND r.estado = 'Activa' AND r.fecha_entrada < ? AND r.fecha_salida > ?
+    WHERE h.tipo_habitacion = ? AND r.estado IN ('Activa', 'En curso') AND r.fecha_entrada < ? AND r.fecha_salida > ?
 ");
 
 foreach ($tipos_habitacion_lista as $tipo) {
