@@ -4,7 +4,7 @@
 
 **Tipo de aplicación.** Web (se usa desde el navegador; las pantallas de recepción y camarista se diseñaron también para celular).
 
-**Equipo 10, grupo XA.** Bonilla Sevilla Alejandra Kaori y Contreras Rivera Leslie. Proyecto de Ingeniería de Software, Unidad 3 (Desarrollo).
+**Equipo 10, grupo XA.** Bonilla Sevilla Alejandra Kaori y Contreras Rivera Leslie. Proyecto de Ingeniería de Software.
 
 ## Stack y versiones
 
@@ -152,11 +152,11 @@ Hotel-Costa-Azul/
 - `git pull` al iniciar cada sesión y `git push` al terminar. Antes de fusionar, se recrea la BD con el script y se comprueba que la aplicación ejecuta en XAMPP.
 - Los conflictos se resuelven en la rama local, sin push forzado.
 
-## Referencias de evidencias (documento U3)
+## Referencias de evidencias 
 
 | Evidencia | Dónde |
 |---|---|
-| Diagrama de las seis tablas con PK y FK | Figura 1 del documento |
+| Diagrama de las seis tablas con PK y FK |  documento  1 |
 | Script de la BD y datos ficticios | `database/esquemaBD.sql` |
 | Conexión PDO | `config/conexion.php` |
 | Operación de la aplicación sobre la BD | Reservación desde `Huesped/Reserva/Reser.php` |
