@@ -49,15 +49,67 @@ function validarFechas(string $entrada, string $salida): string {
 
 /**
  * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
- * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
+ * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", "dos días", etc.
+ * Si se redacta de otra forma sin plazo claro, devuelve $horas_defecto (72 horas).
  */
 function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
-    if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs)\b/iu', $descripcion, $m)) {
-        return (int) $m[1];
+    $texto = trim($descripcion);
+    if ($texto === '') {
+        return $horas_defecto;
     }
-    if (preg_match('/(\d+)\s*(?:d[ií]a|d[ií]as)\b/iu', $descripcion, $m)) {
-        return ((int) $m[1]) * 24;
+
+    $palabrasNumero = [
+        'un' => 1, 'una' => 1, 'uno' => 1,
+        'dos' => 2,
+        'tres' => 3,
+        'cuatro' => 4,
+        'cinco' => 5,
+        'seis' => 6,
+        'siete' => 7,
+        'ocho' => 8,
+        'nueve' => 9,
+        'diez' => 10,
+        'doce' => 12,
+        'quince' => 15,
+        'veinticuatro' => 24,
+        'cuarenta y ocho' => 48,
+        'setenta y dos' => 72,
+    ];
+
+    if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs|h)\b/iu', $texto, $m)) {
+        $horas = (int) $m[1];
+        return $horas > 0 ? $horas : $horas_defecto;
     }
+
+    if (preg_match('/(\d+)\s*(?:d[ií]a|d[ií]as)\b/iu', $texto, $m)) {
+        $dias = (int) $m[1];
+        return $dias > 0 ? $dias * 24 : $horas_defecto;
+    }
+
+    if (preg_match('/(\d+)\s*(?:semana|semanas)\b/iu', $texto, $m)) {
+        $semanas = (int) $m[1];
+        return $semanas > 0 ? $semanas * 24 * 7 : $horas_defecto;
+    }
+
+    $alternancia = implode('|', array_map(
+        static fn(string $p): string => preg_quote($p, '/'),
+        array_keys($palabrasNumero)
+    ));
+
+    if (preg_match('/\b(' . $alternancia . ')\s+(?:hora|horas|hr|hrs)\b/iu', $texto, $m)) {
+        $clave = mb_strtolower(preg_replace('/\s+/', ' ', trim($m[1])), 'UTF-8');
+        if (isset($palabrasNumero[$clave])) {
+            return $palabrasNumero[$clave];
+        }
+    }
+
+    if (preg_match('/\b(' . $alternancia . ')\s+(?:d[ií]a|d[ií]as)\b/iu', $texto, $m)) {
+        $clave = mb_strtolower(preg_replace('/\s+/', ' ', trim($m[1])), 'UTF-8');
+        if (isset($palabrasNumero[$clave])) {
+            return $palabrasNumero[$clave] * 24;
+        }
+    }
+
     return $horas_defecto;
 }
 
@@ -65,7 +117,16 @@ function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72):
  * Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
  */
 function politicaCobraPrimeraNoche(string $descripcion): bool {
-    return (bool) preg_match('/primera\s+noche|1\s*noche|una\s+noche/iu', $descripcion);
+    $texto = trim($descripcion);
+    if ($texto === '') {
+        return false;
+    }
+
+    if (preg_match('/\b(?:sin|no)\s+(?:se\s+)?(?:cobra|cobrar|aplica|aplicar)\b[^.;]*\b(?:primera|1ra|1a|1|una|un)\s+noche\b/iu', $texto)) {
+        return false;
+    }
+
+    return (bool) preg_match('/\b(?:primera|1ra|1a|1|una|un)\s+noche\b/iu', $texto);
 }
 
 /**
@@ -206,15 +267,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// 0a. Registrar entrada del huésped: pasa la reservación a 'En curso' y marca la habitación como ocupada (disponible = 0)
+// 0a. Registrar entrada del huésped: valida fecha de hoy y habitación Limpia
 if ($accion === 'registrar_entrada') {
     $id_res_ci = (int) ($_POST['id_reservacion'] ?? 0);
+    $hoy_ci    = date('Y-m-d');
 
     try {
         $conexion->beginTransaction();
 
         $st_ci = $conexion->prepare("
-            SELECT r.id_reservacion, r.numero_habitacion, r.estado, r.notas,
+            SELECT r.id_reservacion, r.numero_habitacion, r.fecha_entrada, r.estado, r.notas,
                    h.estado_limpieza
             FROM reservacion r
             JOIN habitacion h ON h.numero_habitacion = r.numero_habitacion
@@ -227,8 +289,16 @@ if ($accion === 'registrar_entrada') {
         if (!$res_ci || $res_ci['estado'] !== 'Activa') {
             throw new RuntimeException("Solo se puede registrar la entrada en reservaciones Activas.");
         }
-        if (strtolower($res_ci['estado_limpieza']) === 'mantenimiento') {
-            throw new RuntimeException("No se puede registrar entrada: la habitación " . $res_ci['numero_habitacion'] . " está en Mantenimiento.");
+        if ($res_ci['fecha_entrada'] !== $hoy_ci) {
+            throw new RuntimeException(
+                "No se puede registrar la entrada: la fecha de entrada ({$res_ci['fecha_entrada']}) no corresponde a hoy ({$hoy_ci})."
+            );
+        }
+        if (strtolower((string) $res_ci['estado_limpieza']) !== 'limpia') {
+            throw new RuntimeException(
+                "No se puede registrar entrada: la habitación " . $res_ci['numero_habitacion'] .
+                " está en estado '" . $res_ci['estado_limpieza'] . "' y debe estar 'Limpia'."
+            );
         }
 
         $nota_ci = "[Entrada registrada: " . date('Y-m-d H:i') . "]";
@@ -251,7 +321,7 @@ if ($accion === 'registrar_entrada') {
         $conexion->prepare("
             UPDATE habitacion
             SET disponible = 0
-            WHERE numero_habitacion = ? AND estado_limpieza <> 'Mantenimiento'
+            WHERE numero_habitacion = ? AND estado_limpieza = 'Limpia'
         ")->execute([$res_ci['numero_habitacion']]);
 
         $conexion->commit();
@@ -267,7 +337,7 @@ if ($accion === 'registrar_entrada') {
     }
 }
 
-// 0b. Finalizar reservación (Salida): pasa a 'Finalizada', libera para futuras reservas y marca habitación Sucia
+// 0b. Finalizar reservación (Salida): exige saldo pendiente en $0.00
 if ($accion === 'finalizar_reservacion') {
     $id_res_co = (int) ($_POST['id_reservacion'] ?? 0);
 
@@ -275,10 +345,11 @@ if ($accion === 'finalizar_reservacion') {
         $conexion->beginTransaction();
 
         $st_co = $conexion->prepare("
-            SELECT r.id_reservacion, r.numero_habitacion, r.estado, r.notas,
-                   h.estado_limpieza
+            SELECT r.id_reservacion, r.numero_habitacion, r.fecha_entrada, r.fecha_salida,
+                   r.estado, r.notas, h.estado_limpieza, t.precio_noche
             FROM reservacion r
             JOIN habitacion h ON h.numero_habitacion = r.numero_habitacion
+            JOIN tarifa t     ON t.id_tarifa = r.id_tarifa
             WHERE r.id_reservacion = ?
             FOR UPDATE
         ");
@@ -287,6 +358,21 @@ if ($accion === 'finalizar_reservacion') {
 
         if (!$res_co || !in_array($res_co['estado'], ['Activa', 'En curso'], true)) {
             throw new RuntimeException("Solo se pueden finalizar reservaciones Activas o En curso.");
+        }
+
+        $st_pag = $conexion->prepare("SELECT COALESCE(SUM(monto), 0) FROM pago WHERE id_reservacion = ?");
+        $st_pag->execute([$id_res_co]);
+        $total_pagado_co = round((float) $st_pag->fetchColumn(), 2);
+
+        $noches_co = max(1, (int) (new DateTime($res_co['fecha_entrada']))->diff(new DateTime($res_co['fecha_salida']))->days);
+        $total_estancia_co = round($noches_co * (float) $res_co['precio_noche'], 2);
+        $saldo_pendiente_co = round($total_estancia_co - $total_pagado_co, 2);
+
+        if ($saldo_pendiente_co > 0.009) {
+            throw new RuntimeException(
+                "No se puede finalizar la reservación: tiene un saldo pendiente de $" .
+                number_format($saldo_pendiente_co, 2) . " (debe estar en $0.00)."
+            );
         }
 
         $nota_co = "[Salida / Finalizada: " . date('Y-m-d H:i') . "]";
@@ -306,7 +392,7 @@ if ($accion === 'finalizar_reservacion') {
             throw new RuntimeException("No se pudo actualizar el estado de la reservación a Finalizada.");
         }
 
-        $es_mant_co = (strtolower($res_co['estado_limpieza']) === 'mantenimiento');
+        $es_mant_co = (strtolower((string) $res_co['estado_limpieza']) === 'mantenimiento');
         if ($es_mant_co) {
             $conexion->prepare("UPDATE habitacion SET disponible = 0 WHERE numero_habitacion = ?")
                      ->execute([$res_co['numero_habitacion']]);
@@ -397,7 +483,7 @@ if ($accion === 'cancelar_reservacion') {
                     if ($cargo_a_registrar > 0) {
                         $st_cargo = $conexion->prepare(
                             "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                             VALUES (?, NOW(), 'Liquidación', 'Recepción', ?, ?)"
+                             VALUES (?, NOW(), 'Penalización', 'Recepción', ?, ?)"
                         );
                         $st_cargo->execute([$cargo_a_registrar, $id_reservacion_cancelar, $id_usuario]);
                     }
@@ -407,7 +493,7 @@ if ($accion === 'cancelar_reservacion') {
                     $monto_negativo = -abs($monto_reembolso);
                     $st_dev = $conexion->prepare(
                         "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                         VALUES (?, NOW(), 'Liquidación', 'Recepción', ?, ?)"
+                         VALUES (?, NOW(), 'Devolución', 'Recepción', ?, ?)"
                     );
                     $st_dev->execute([$monto_negativo, $id_reservacion_cancelar, $id_usuario]);
                     $notas_extra[] = "[Devolución registrada: -$" . number_format($monto_reembolso, 2) . "]";
@@ -911,6 +997,31 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
   </div>
 
   <script>
+    (() => {
+      const UMBRAL_SLA_MS = 3000;
+      const tVistaInicio = performance.now();
+
+      window.addEventListener('load', () => {
+        const nav = performance.getEntriesByType('navigation')[0];
+        const ms = nav ? Math.round(nav.responseEnd - nav.startTime) : Math.round(performance.now() - tVistaInicio);
+        console.info(`[Rendimiento recep.php] ${ms} ms | SLA <= 3000ms: ${ms <= UMBRAL_SLA_MS ? 'OK' : 'EXCEDIDO'}`);
+        if (ms > UMBRAL_SLA_MS) {
+          console.warn(`[SLA >3s] La carga de recep.php tardó ${ms} ms.`);
+        }
+      });
+
+      const fetchOriginal = window.fetch.bind(window);
+      window.fetch = async (url, options = {}) => {
+        const t0 = performance.now();
+        const res = await fetchOriginal(url, options);
+        const ms = Math.round(performance.now() - t0);
+        if (ms > UMBRAL_SLA_MS) {
+          console.warn(`[SLA >3s] ${url} tardó ${ms} ms (Servidor: ${res.headers.get('X-Response-Time') ?? 'N/A'})`);
+        }
+        return res;
+      };
+    })();
+
     function sumarDiasISO(fechaISO, dias) {
       const partes = fechaISO.split('-');
       if (partes.length !== 3) return null;

@@ -12,13 +12,16 @@ $errorMsg = '';
 $correo = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $correo = trim($_POST['correo'] ?? '');
+    $password = $_POST['password'] ?? '';
+
     if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
         $errorMsg = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        $correo = trim($_POST['correo'] ?? '');
-        $password = $_POST['password'] ?? '';
-
-        if (!empty($correo) && !empty($password)) {
+        $bloqueo = verificarBloqueoLogin('huesped', $correo);
+        if ($bloqueo['bloqueado']) {
+            $errorMsg = $bloqueo['mensaje'];
+        } elseif (!empty($correo) && !empty($password)) {
             try {
                 $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo";
                 $stmt = $conexion->prepare($sql);
@@ -29,8 +32,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Solo se acepta el hash guardado en la BD (password_hash / password_verify)
                 if ($usuario && password_verify($password, $usuario['password'])) {
                     if (strtolower($usuario['rol']) !== 'huesped') {
-                        $errorMsg = "Esta cuenta es del personal del hotel. Ingresa por el portal de personal.";
+                        $restantes = registrarIntentoFallidoLogin('huesped', $correo);
+                        $errorMsg = "Esta cuenta es del personal del hotel. Ingresa por el portal de personal."
+                            . ($restantes > 0 ? " Te quedan {$restantes} intento(s)." : "");
                     } else {
+                        limpiarIntentosLogin('huesped', $correo);
                         session_regenerate_id(true);
                         $_SESSION['id_usuario'] = $usuario['id_usuario'];
                         $_SESSION['nombre'] = $usuario['nombre'];
@@ -40,7 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit();
                     }
                 } else {
-                    $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos.";
+                    $restantes = registrarIntentoFallidoLogin('huesped', $correo);
+                    if ($restantes <= 0) {
+                        $minutos = (int) ceil(LOGIN_VENTANA_SEGUNDOS / 60);
+                        $errorMsg = "Has excedido el límite de intentos permitidos. Por seguridad, el acceso se bloqueó por {$minutos} minuto(s).";
+                    } else {
+                        $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos. Te quedan {$restantes} intento(s).";
+                    }
                 }
             } catch (PDOException $e) {
                 error_log('Login huésped: ' . $e->getMessage());

@@ -68,25 +68,42 @@ $etiqueta = ($periodo === 'rango')
 
 $rango = ['desde' => $desde->format('Y-m-d'), 'hasta' => $hasta->format('Y-m-d')];
 
-// 1. Movimientos registrados en pago dentro del periodo (incluye reservaciones canceladas y cargos/reembolsos)
+// 1. Movimientos registrados en pago dentro del periodo (separando penalizaciones y devoluciones)
 $st = $conexion->prepare("
     SELECT COALESCE(SUM(p.monto), 0) AS total,
-           COALESCE(SUM(CASE WHEN p.monto < 0 THEN p.monto ELSE 0 END), 0) AS devoluciones,
-           COALESCE(SUM(CASE WHEN p.tipo_pago = 'Anticipo'    THEN p.monto ELSE 0 END), 0) AS anticipo,
-           COALESCE(SUM(CASE WHEN p.tipo_pago = 'Liquidación' THEN p.monto ELSE 0 END), 0) AS liquidacion,
-           COALESCE(SUM(CASE WHEN p.canal_pago LIKE '%línea%' THEN p.monto ELSE 0 END), 0) AS en_linea
+           COALESCE(SUM(CASE
+               WHEN p.tipo_pago = 'Devolución' OR p.monto < 0 THEN p.monto
+               ELSE 0
+           END), 0) AS devoluciones,
+           COALESCE(SUM(CASE
+               WHEN p.tipo_pago = 'Penalización' THEN p.monto
+               ELSE 0
+           END), 0) AS penalizacion,
+           COALESCE(SUM(CASE
+               WHEN p.tipo_pago = 'Anticipo' AND p.monto > 0 THEN p.monto
+               ELSE 0
+           END), 0) AS anticipo,
+           COALESCE(SUM(CASE
+               WHEN p.tipo_pago = 'Liquidación' AND p.monto > 0 AND p.canal_pago <> 'Sistema' THEN p.monto
+               ELSE 0
+           END), 0) AS liquidacion,
+           COALESCE(SUM(CASE
+               WHEN p.canal_pago LIKE '%línea%' AND p.monto > 0 THEN p.monto
+               ELSE 0
+           END), 0) AS en_linea
     FROM pago p
     WHERE p.fecha_hora >= :desde AND p.fecha_hora < :hasta
 ");
 $st->execute($rango);
 $pagos = $st->fetch(PDO::FETCH_ASSOC);
 
-$total_ingresos      = (float) $pagos['total'];
-$total_devoluciones  = (float) $pagos['devoluciones'];
-$ingreso_anticipo    = (float) $pagos['anticipo'];
-$ingreso_liquidacion = (float) $pagos['liquidacion'];
-$ingreso_en_linea    = (float) $pagos['en_linea'];
-$ingreso_terminal    = $total_ingresos - $ingreso_en_linea;
+$total_ingresos       = (float) $pagos['total'];
+$total_devoluciones   = (float) $pagos['devoluciones'];
+$ingreso_penalizacion = (float) $pagos['penalizacion'];
+$ingreso_anticipo     = (float) $pagos['anticipo'];
+$ingreso_liquidacion  = (float) $pagos['liquidacion'];
+$ingreso_en_linea     = (float) $pagos['en_linea'];
+$ingreso_terminal     = $total_ingresos - $ingreso_en_linea;
 
 // 2. Reservaciones registradas en el periodo, por estado
 $st = $conexion->prepare("
@@ -308,6 +325,10 @@ for ($i = 0; $i < $dias; $i += 7) {
                     <strong class="<?php echo $ingreso_liquidacion < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_liquidacion); ?></strong>
                 </div>
                 <div class="summary-box">
+                    <span>Penalización</span>
+                    <strong class="<?php echo $ingreso_penalizacion < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_penalizacion); ?></strong>
+                </div>
+                <div class="summary-box">
                     <span>Devoluciones</span>
                     <strong class="<?php echo $total_devoluciones < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($total_devoluciones); ?></strong>
                 </div>
@@ -326,7 +347,7 @@ for ($i = 0; $i < $dias; $i += 7) {
             </div>
 
             <p class="disclaimer-text">
-                Los ingresos reflejan los movimientos registrados en el periodo (incluyendo devoluciones en rojo y negativo). La ocupación se calcula por noches reservadas dentro del periodo.
+                Los ingresos reflejan los movimientos registrados en el periodo (separando penalizaciones y devoluciones en rojo y negativo). La ocupación se calcula por noches reservadas dentro del periodo.
             </p>
         </aside>
 
@@ -355,6 +376,23 @@ for ($i = 0; $i < $dias; $i += 7) {
                 }
             });
         }
+
+        (() => {
+            const UMBRAL_SLA_MS = 3000;
+            const tInicioVista  = performance.now();
+
+            window.addEventListener('load', () => {
+                const nav = performance.getEntriesByType('navigation')[0];
+                const ms  = nav
+                    ? Math.round(nav.responseEnd - nav.startTime)
+                    : Math.round(performance.now() - tInicioVista);
+
+                console.info(`[Rendimiento repo.php] ${ms} ms | SLA <= 3000ms: ${ms <= UMBRAL_SLA_MS ? 'OK' : 'EXCEDIDO'}`);
+                if (ms > UMBRAL_SLA_MS) {
+                    console.warn(`[SLA >3s] La carga de repo.php tardó ${ms} ms.`);
+                }
+            });
+        })();
     </script>
 </body>
 </html>

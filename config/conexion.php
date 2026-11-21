@@ -51,11 +51,13 @@ function obtenerConexion(): PDO {
     if ($pdo instanceof PDO) {
         return $pdo;
     }
-    $host = '127.0.0.1';
-    $puerto = '3306';
-    $bd = 'hotel_costa_azul';
-    $user = 'root';
-    $pass = '';
+
+    // Valores por defecto pensados solo para desarrollo local; en producción definir DB_* en el entorno
+    $host   = (string) ($_ENV['DB_HOST'] ?? $_SERVER['DB_HOST'] ?? getenv('DB_HOST') ?: '127.0.0.1');
+    $puerto = (string) ($_ENV['DB_PORT'] ?? $_SERVER['DB_PORT'] ?? getenv('DB_PORT') ?: '3306');
+    $bd     = (string) ($_ENV['DB_NAME'] ?? $_SERVER['DB_NAME'] ?? getenv('DB_NAME') ?: 'hotel_costa_azul');
+    $user   = (string) ($_ENV['DB_USER'] ?? $_SERVER['DB_USER'] ?? getenv('DB_USER') ?: 'root');
+    $pass   = (string) ($_ENV['DB_PASS'] ?? $_SERVER['DB_PASS'] ?? getenv('DB_PASS') ?? '');
 
     $dsn = "mysql:host={$host};port={$puerto};dbname={$bd};charset=utf8mb4";
     try {
@@ -67,7 +69,9 @@ function obtenerConexion(): PDO {
         ]);
         return $pdo;
     } catch (PDOException $e) {
-        die("Error de conexión: " . $e->getMessage());
+        error_log('[Hotel Costa Azul | Error de conexión BD] ' . $e->getMessage());
+        http_response_code(503);
+        die("No se pudo establecer conexión con el servicio de base de datos. Intenta de nuevo más tarde.");
     }
 }
 

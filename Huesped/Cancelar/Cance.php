@@ -24,15 +24,67 @@ $mensaje_error = '';
 
 /**
  * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
- * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", etc.
+ * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", "dos días", etc.
+ * Si se redacta de otra forma sin plazo claro, devuelve $horas_defecto (72 horas).
  */
 function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
-    if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs)\b/iu', $descripcion, $m)) {
-        return (int) $m[1];
+    $texto = trim($descripcion);
+    if ($texto === '') {
+        return $horas_defecto;
     }
-    if (preg_match('/(\d+)\s*(?:d[ií]a|d[ií]as)\b/iu', $descripcion, $m)) {
-        return ((int) $m[1]) * 24;
+
+    $palabrasNumero = [
+        'un' => 1, 'una' => 1, 'uno' => 1,
+        'dos' => 2,
+        'tres' => 3,
+        'cuatro' => 4,
+        'cinco' => 5,
+        'seis' => 6,
+        'siete' => 7,
+        'ocho' => 8,
+        'nueve' => 9,
+        'diez' => 10,
+        'doce' => 12,
+        'quince' => 15,
+        'veinticuatro' => 24,
+        'cuarenta y ocho' => 48,
+        'setenta y dos' => 72,
+    ];
+
+    if (preg_match('/(\d+)\s*(?:hora|horas|hr|hrs|h)\b/iu', $texto, $m)) {
+        $horas = (int) $m[1];
+        return $horas > 0 ? $horas : $horas_defecto;
     }
+
+    if (preg_match('/(\d+)\s*(?:d[ií]a|d[ií]as)\b/iu', $texto, $m)) {
+        $dias = (int) $m[1];
+        return $dias > 0 ? $dias * 24 : $horas_defecto;
+    }
+
+    if (preg_match('/(\d+)\s*(?:semana|semanas)\b/iu', $texto, $m)) {
+        $semanas = (int) $m[1];
+        return $semanas > 0 ? $semanas * 24 * 7 : $horas_defecto;
+    }
+
+    $alternancia = implode('|', array_map(
+        static fn(string $p): string => preg_quote($p, '/'),
+        array_keys($palabrasNumero)
+    ));
+
+    if (preg_match('/\b(' . $alternancia . ')\s+(?:hora|horas|hr|hrs)\b/iu', $texto, $m)) {
+        $clave = mb_strtolower(preg_replace('/\s+/', ' ', trim($m[1])), 'UTF-8');
+        if (isset($palabrasNumero[$clave])) {
+            return $palabrasNumero[$clave];
+        }
+    }
+
+    if (preg_match('/\b(' . $alternancia . ')\s+(?:d[ií]a|d[ií]as)\b/iu', $texto, $m)) {
+        $clave = mb_strtolower(preg_replace('/\s+/', ' ', trim($m[1])), 'UTF-8');
+        if (isset($palabrasNumero[$clave])) {
+            return $palabrasNumero[$clave] * 24;
+        }
+    }
+
     return $horas_defecto;
 }
 
@@ -40,7 +92,16 @@ function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72):
  * Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
  */
 function politicaCobraPrimeraNoche(string $descripcion): bool {
-    return (bool) preg_match('/primera\s+noche|1\s*noche|una\s+noche/iu', $descripcion);
+    $texto = trim($descripcion);
+    if ($texto === '') {
+        return false;
+    }
+
+    if (preg_match('/\b(?:sin|no)\s+(?:se\s+)?(?:cobra|cobrar|aplica|aplicar)\b[^.;]*\b(?:primera|1ra|1a|1|una|un)\s+noche\b/iu', $texto)) {
+        return false;
+    }
+
+    return (bool) preg_match('/\b(?:primera|1ra|1a|1|una|un)\s+noche\b/iu', $texto);
 }
 
 // Respaldo solo en caso de que una reservación histórica no tenga id_politica asociado
@@ -153,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($cargo_a_registrar > 0) {
                     $stmt_cargo = $conexion->prepare(
                         "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                         VALUES (?, NOW(), 'Liquidación', 'Sistema', ?, NULL)"
+                         VALUES (?, NOW(), 'Penalización', 'Sistema', ?, NULL)"
                     );
                     $stmt_cargo->execute([$cargo_a_registrar, $reservacion['id_reservacion']]);
                 }
@@ -163,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $monto_negativo = -abs($monto_reembolso);
                 $stmt_dev = $conexion->prepare(
                     "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                     VALUES (?, NOW(), 'Liquidación', 'Sistema', ?, NULL)"
+                     VALUES (?, NOW(), 'Devolución', 'Sistema', ?, NULL)"
                 );
                 $stmt_dev->execute([$monto_negativo, $reservacion['id_reservacion']]);
                 $notas_extra[] = "[Devolución registrada: -$" . number_format($monto_reembolso, 2) . "]";
@@ -368,7 +429,7 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
           <br>Monto pagado: <b>$<?php echo number_format($total_pagado, 2); ?></b> · Devolución a registrar: <b>-$<?php echo number_format($monto_reembolso, 2); ?></b>.
         <?php endif; ?>
       </p>
-      <form method="POST">
+      <form method="POST" id="cancelReservationForm">
         <?php echo campoCsrf(); ?>
         <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>">
         <div class="modal-buttons">
@@ -385,6 +446,36 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
     function toggleModal(abrir) {
       document.getElementById('confirmModal').style.display = abrir ? 'flex' : 'none';
     }
+
+    (() => {
+      const UMBRAL_SLA_MS = 3000;
+      const tInicioVista  = performance.now();
+
+      window.addEventListener('load', () => {
+        const nav = performance.getEntriesByType('navigation')[0];
+        const ms  = nav
+          ? Math.round(nav.responseEnd - nav.startTime)
+          : Math.round(performance.now() - tInicioVista);
+
+        console.info(`[Rendimiento Cance.php] ${ms} ms | SLA <= 3000ms: ${ms <= UMBRAL_SLA_MS ? 'OK' : 'EXCEDIDO'}`);
+        if (ms > UMBRAL_SLA_MS) {
+          console.warn(`[SLA >3s] La carga de Cance.php tardó ${ms} ms.`);
+        }
+      });
+
+      const cancelForm = document.querySelector('#cancelReservationForm');
+      if (cancelForm) {
+        cancelForm.addEventListener('submit', () => {
+          const tEnvio = performance.now();
+          window.setTimeout(() => {
+            const transcurrido = Math.round(performance.now() - tEnvio);
+            if (transcurrido > UMBRAL_SLA_MS) {
+              console.warn(`[SLA >3s] La cancelación está tardando más de 3000 ms (${transcurrido} ms).`);
+            }
+          }, UMBRAL_SLA_MS);
+        });
+      }
+    })();
   </script>
 </body>
 </html>

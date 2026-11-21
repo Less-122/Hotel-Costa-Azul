@@ -5,7 +5,7 @@ require_once '../../config/sesion.php';
 verificarAcceso('huesped');
 
 $id_huesped = (int) $_SESSION['id_usuario'];
-$codigo     = trim($_REQUEST['codigo'] ?? '');
+$codigo     = strtoupper(trim($_REQUEST['codigo'] ?? ''));
 
 function fecha(string $f): string {
     $meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -87,7 +87,7 @@ $card_form = [
     'cvv'            => '',
 ];
 
-// PAGAR
+// PAGAR (solo reservaciones en estado 'Activa'; recepción también admite 'En curso')
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
         $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
@@ -120,8 +120,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conexion->beginTransaction();
                 $r = buscarReservacion($conexion, $codigo, $id_huesped, true);
 
-                if (!$r || $r['estado'] !== 'Activa') {
-                    $mensaje_error = "La reservación no existe, no es tuya o no está activa.";
+                if (!$r) {
+                    $mensaje_error = "La reservación no existe o no pertenece a tu cuenta.";
+                } elseif ($r['estado'] !== 'Activa') {
+                    $mensaje_error = "El pago en línea solo está disponible para reservaciones en estado Activa (estado actual: "
+                                   . $r['estado'] . ").";
                 } elseif ($monto <= 0 || $monto > $r['saldo']) {
                     $mensaje_error = "El monto debe ser mayor a 0 y no superar tu saldo pendiente ($"
                                    . number_format($r['saldo'], 2) . ").";
@@ -227,7 +230,7 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
   <main class="main-container">
     <section class="left-section">
       <h1>Pagar mi reservación</h1>
-      <p class="subtitle">Abona un anticipo o liquida tu saldo en línea.</p>
+      <p class="subtitle">Abona un anticipo o liquida tu saldo en línea (solo reservaciones activas).</p>
 
       <?php if ($mensaje_exito): ?>
           <div class="alert alert-success" style="color: #3c763d; background: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo htmlspecialchars($mensaje_exito, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -254,6 +257,7 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
               <?php echo fecha($reservacion['fecha_entrada']); ?> → <?php echo fecha($reservacion['fecha_salida']); ?>
               · Hab. <?php echo htmlspecialchars($reservacion['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?>
               (<?php echo htmlspecialchars($reservacion['tipo_habitacion'], ENT_QUOTES, 'UTF-8'); ?>)
+              · Estado: <b><?php echo htmlspecialchars($reservacion['estado'], ENT_QUOTES, 'UTF-8'); ?></b>
           </div>
           <div class="res-financials">
             <span class="fin-item">Total <b>$<?php echo number_format($reservacion['costo'], 2); ?></b></span>
@@ -275,7 +279,7 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
         <?php if ($puede_pagar): ?>
           <h2>Datos de la tarjeta</h2>
           <!-- Los datos sensibles de la tarjeta se validan en el servidor y no se almacenan -->
-          <form method="POST" autocomplete="off">
+          <form method="POST" autocomplete="off" id="payReservationForm">
             <?php echo campoCsrf(); ?>
             <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>">
 
@@ -307,8 +311,8 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
             <button type="submit" class="btn-pay-submit"><i class="fa-solid fa-lock"></i> Pagar</button>
           </form>
         <?php elseif ($reservacion && $reservacion['estado'] !== 'Activa'): ?>
-          <h2>Pago no disponible</h2>
-          <p style="color: #666;">Esta reservación está <?php echo htmlspecialchars(strtolower($reservacion['estado']), ENT_QUOTES, 'UTF-8'); ?>.</p>
+          <h2>Pago en línea no disponible</h2>
+          <p style="color: #666;">Esta reservación está <b><?php echo htmlspecialchars($reservacion['estado'], ENT_QUOTES, 'UTF-8'); ?></b>. El pago en línea solo acepta reservaciones en estado <b>Activa</b> (si ya está <em>En curso</em>, el pago debe registrarse en recepción).</p>
         <?php elseif ($reservacion): ?>
           <h2>Reservación liquidada</h2>
           <p style="color: #666;">No tienes saldo pendiente.</p>
@@ -319,5 +323,58 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
       </div>
     </aside>
   </main>
+
+  <script>
+    (() => {
+      const UMBRAL_SLA_MS = 3000;
+      const tInicioVista  = performance.now();
+
+      window.addEventListener('load', () => {
+        const nav = performance.getEntriesByType('navigation')[0];
+        const ms  = nav
+          ? Math.round(nav.responseEnd - nav.startTime)
+          : Math.round(performance.now() - tInicioVista);
+
+        console.info(`[Rendimiento pagar.php] ${ms} ms | SLA <= 3000ms: ${ms <= UMBRAL_SLA_MS ? 'OK' : 'EXCEDIDO'}`);
+        if (ms > UMBRAL_SLA_MS) {
+          console.warn(`[SLA >3s] La carga de pagar.php tardó ${ms} ms.`);
+        }
+      });
+
+      if (typeof window.fetch === 'function') {
+        const fetchOriginal = window.fetch.bind(window);
+        window.fetch = async (url, options = {}) => {
+          const t0  = performance.now();
+          const res = await fetchOriginal(url, options);
+          const ms  = Math.round(performance.now() - t0);
+          if (ms > UMBRAL_SLA_MS) {
+            const srvTime = res.headers.get('X-Response-Time') ?? 'N/A';
+            console.warn(`[SLA >3s] ${url} tardó ${ms} ms (Servidor: ${srvTime})`);
+          }
+          return res;
+        };
+      }
+
+      const codeInput = document.querySelector('#reservationCode');
+      if (codeInput) {
+        codeInput.addEventListener('input', () => {
+          codeInput.value = codeInput.value.toUpperCase();
+        });
+      }
+
+      const payForm = document.querySelector('#payReservationForm');
+      if (payForm) {
+        payForm.addEventListener('submit', () => {
+          const tEnvio = performance.now();
+          window.setTimeout(() => {
+            const transcurrido = Math.round(performance.now() - tEnvio);
+            if (transcurrido > UMBRAL_SLA_MS) {
+              console.warn(`[SLA >3s] El procesamiento de pago está tardando más de 3000 ms (${transcurrido} ms).`);
+            }
+          }, UMBRAL_SLA_MS);
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
