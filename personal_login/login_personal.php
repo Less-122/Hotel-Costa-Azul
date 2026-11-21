@@ -26,6 +26,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $error = $bloqueo['mensaje'];
         } elseif ($correo_form === '' || $password === '') {
             $error = "Complete todos los campos.";
+        } elseif (preg_match('/\s/u', $password)) {
+            $error = "La contraseña no debe contener espacios.";
         } else {
             $stmt = $conexion->prepare(
                 "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo"
@@ -118,7 +120,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     <label for="password">Contraseña</label>
                     <div class="input-wrapper">
                         <i class="fa-solid fa-lock icon-left"></i>
-                        <input type="password" id="password" name="password" placeholder="••••••••" required>
+                        <input type="password" id="password" name="password" pattern="^\S+$" title="No se permiten espacios en la contraseña" placeholder="••••••••" required>
                         <i class="fa-solid fa-eye icon-toggle-password" id="togglePassword"></i>
                     </div>
                 </div>
@@ -134,5 +136,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     <!-- Script de funcionalidad -->
     <script src="login_personal.js"></script>
+    <script>
+        const passPersonal = document.getElementById('password');
+        if (passPersonal) {
+            passPersonal.addEventListener('input', function () {
+                if (/\s/.test(this.value)) {
+                    this.value = this.value.replace(/\s+/g, '');
+                }
+            });
+        }
+    </script>
 </body>
 </html>

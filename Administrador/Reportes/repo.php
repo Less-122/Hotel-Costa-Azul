@@ -68,15 +68,22 @@ $etiqueta = ($periodo === 'rango')
 
 $rango = ['desde' => $desde->format('Y-m-d'), 'hasta' => $hasta->format('Y-m-d')];
 
+// Penalizaciones retenidas de pagos ya cobrados previamente: se muestran en Penalización
+// pero no se suman de nuevo en el total neto ni en canales para evitar duplicar ingresos.
+$es_retencion_previa = "(p.tipo_pago = 'Penalización' AND p.canal_pago = 'Retención')";
+
 // 1. Movimientos registrados en pago dentro del periodo (separando penalizaciones y devoluciones)
 $st = $conexion->prepare("
-    SELECT COALESCE(SUM(p.monto), 0) AS total,
+    SELECT COALESCE(SUM(CASE
+               WHEN {$es_retencion_previa} THEN 0
+               ELSE p.monto
+           END), 0) AS total,
            COALESCE(SUM(CASE
                WHEN p.tipo_pago = 'Devolución' OR p.monto < 0 THEN p.monto
                ELSE 0
            END), 0) AS devoluciones,
            COALESCE(SUM(CASE
-               WHEN p.tipo_pago = 'Penalización' THEN p.monto
+               WHEN p.tipo_pago = 'Penalización' THEN ABS(p.monto)
                ELSE 0
            END), 0) AS penalizacion,
            COALESCE(SUM(CASE
@@ -88,7 +95,7 @@ $st = $conexion->prepare("
                ELSE 0
            END), 0) AS liquidacion,
            COALESCE(SUM(CASE
-               WHEN p.canal_pago LIKE '%línea%' AND p.monto > 0 THEN p.monto
+               WHEN p.canal_pago LIKE '%línea%' AND p.monto > 0 AND NOT ({$es_retencion_previa}) THEN p.monto
                ELSE 0
            END), 0) AS en_linea
     FROM pago p
@@ -182,9 +189,10 @@ foreach ($tipos_habitacion_lista as $tipo) {
     ];
 }
 
-// 4. Ingresos por semana dentro del periodo según movimientos en pago
+// 4. Ingresos por semana dentro del periodo según movimientos en pago (sin duplicar retención previa)
 $st = $conexion->prepare("
-    SELECT DATE(p.fecha_hora) AS dia, SUM(p.monto) AS total
+    SELECT DATE(p.fecha_hora) AS dia,
+           SUM(CASE WHEN {$es_retencion_previa} THEN 0 ELSE p.monto END) AS total
     FROM pago p
     WHERE p.fecha_hora >= :desde AND p.fecha_hora < :hasta
     GROUP BY DATE(p.fecha_hora)
@@ -347,7 +355,7 @@ for ($i = 0; $i < $dias; $i += 7) {
             </div>
 
             <p class="disclaimer-text">
-                Los ingresos reflejan los movimientos registrados en el periodo (separando penalizaciones y devoluciones en rojo y negativo). La ocupación se calcula por noches reservadas dentro del periodo.
+                Los ingresos reflejan los movimientos registrados en el periodo (separando penalizaciones y devoluciones). La ocupación se calcula por noches reservadas dentro del periodo.
             </p>
         </aside>
 

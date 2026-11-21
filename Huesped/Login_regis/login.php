@@ -2,6 +2,10 @@
 require_once '../../config/conexion.php';
 require_once '../../config/sesion.php';
 
+if (!isset($conexion) || !($conexion instanceof PDO)) {
+    $conexion = obtenerConexion();
+}
+
 // Si ya hay sesión iniciada, mandamos a cada quien a su página
 if (isset($_SESSION['id_usuario'])) {
     header("Location: " . paginaInicioRol(rolActual()));
@@ -21,12 +25,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $bloqueo = verificarBloqueoLogin('huesped', $correo);
         if ($bloqueo['bloqueado']) {
             $errorMsg = $bloqueo['mensaje'];
-        } elseif (!empty($correo) && !empty($password)) {
+        } elseif ($correo === '' || $password === '') {
+            $errorMsg = "Por favor, completa todos los campos.";
+        } elseif (preg_match('/\s/u', $password)) {
+            $errorMsg = "La contraseña no debe contener espacios.";
+        } else {
             try {
-                $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo";
+                $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo LIMIT 1";
                 $stmt = $conexion->prepare($sql);
-                $stmt->bindParam(':correo', $correo);
-                $stmt->execute();
+                $stmt->execute([':correo' => $correo]);
                 $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 // Solo se acepta el hash guardado en la BD (password_hash / password_verify)
@@ -58,8 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 error_log('Login huésped: ' . $e->getMessage());
                 $errorMsg = "Error en el sistema. Inténtalo de nuevo.";
             }
-        } else {
-            $errorMsg = "Por favor, completa todos los campos.";
         }
     }
 }
@@ -122,7 +127,7 @@ $registroOk = (($_GET['registro'] ?? '') === 'ok');
           <label for="password">Contraseña</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-lock icon-left"></i>
-            <input type="password" id="password" name="password" required>
+            <input type="password" id="password" name="password" pattern="^\S+$" title="No se permiten espacios en la contraseña" required>
             <i class="fa-regular fa-eye icon-toggle-password" id="togglePassword"></i>
           </div>
         </div>
@@ -141,6 +146,13 @@ $registroOk = (($_GET['registro'] ?? '') === 'ok');
         const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
         passwordInput.setAttribute('type', type);
         this.classList.toggle('fa-eye-slash');
+      });
+    }
+    if (passwordInput) {
+      passwordInput.addEventListener('input', function () {
+        if (/\s/.test(this.value)) {
+          this.value = this.value.replace(/\s+/g, '');
+        }
       });
     }
   </script>

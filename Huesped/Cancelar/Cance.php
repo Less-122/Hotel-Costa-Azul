@@ -23,9 +23,9 @@ if (isset($_GET['ok'])) {
 $mensaje_error = '';
 
 /**
- * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
- * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", "dos días", etc.
- * Si se redacta de otra forma sin plazo claro, devuelve $horas_defecto (72 horas).
+- Extrae las horas mínimas de anticipación a partir de la descripción de la política.
+- Soporta textos como "48 horas antes", "72 hrs", "3 días antes", "dos días", etc.
+- Si se redacta de otra forma sin plazo claro, devuelve $horas_defecto (72 horas).
  */
 function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
     $texto = trim($descripcion);
@@ -89,7 +89,7 @@ function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72):
 }
 
 /**
- * Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
+- Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
  */
 function politicaCobraPrimeraNoche(string $descripcion): bool {
     $texto = trim($descripcion);
@@ -210,6 +210,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($monto_penalizacion > 0) {
                 $notas_extra[] = "[Penalización por cancelación tardía: $" . number_format($monto_penalizacion, 2) . " (1ra noche)]";
 
+                // Parte retenida de pagos ya cobrados (se marca como 'Retención' para reflejarse en Penalización sin duplicar ingresos)
+                $retenido_pagado = ($total_pagado > 0)
+                    ? min($monto_penalizacion, $total_pagado)
+                    : 0.0;
+                $retenido_pagado = round($retenido_pagado, 2);
+                if ($retenido_pagado > 0) {
+                    $stmt_ret = $conexion->prepare(
+                        "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                         VALUES (?, NOW(), 'Penalización', 'Retención', ?, NULL)"
+                    );
+                    $stmt_ret->execute([$retenido_pagado, $reservacion['id_reservacion']]);
+                }
+
+                // Cargo adicional pendiente si la penalización supera lo ya pagado
                 $cargo_a_registrar = max(0.0, round($monto_penalizacion - $total_pagado, 2));
                 if ($cargo_a_registrar > 0) {
                     $stmt_cargo = $conexion->prepare(
@@ -271,6 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
+$texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembolso, 2) : '$0.00';
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -391,7 +406,7 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
           <?php endif; ?>
           <?php if (!$cancelada && $total_pagado > 0): ?>
             <p style="margin: 8px 0 0 0; color: #2e6da4; font-weight: 500;">
-              <i class="fa-solid fa-rotate-left"></i> Monto pagado actual: <b>$<?php echo number_format($total_pagado, 2); ?></b>. Al cancelar se registrará una devolución de <b>-$<?php echo number_format($monto_reembolso, 2); ?></b>.
+              <i class="fa-solid fa-rotate-left"></i> Monto pagado actual: <b>$<?php echo number_format($total_pagado, 2); ?></b>. Al cancelar se registrará una devolución de <b><?php echo $texto_devolucion_ui; ?></b>.
             </p>
           <?php endif; ?>
         </div>
@@ -426,7 +441,7 @@ $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
           <br><span style="color: #a94442; font-weight: 600;">Al haber vencido el plazo gratuito, se aplicará un cargo de $<?php echo number_format($monto_penalizacion, 2); ?> correspondiente a la primera noche.</span>
         <?php endif; ?>
         <?php if ($total_pagado > 0): ?>
-          <br>Monto pagado: <b>$<?php echo number_format($total_pagado, 2); ?></b> · Devolución a registrar: <b>-$<?php echo number_format($monto_reembolso, 2); ?></b>.
+          <br>Monto pagado: <b>$<?php echo number_format($total_pagado, 2); ?></b> · Devolución a registrar: <b><?php echo $texto_devolucion_ui; ?></b>.
         <?php endif; ?>
       </p>
       <form method="POST" id="cancelReservationForm">

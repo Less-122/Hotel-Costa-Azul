@@ -69,6 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'El teléfono debe tener 10 dígitos.';
         } elseif (!filter_var($valores['correo'], FILTER_VALIDATE_EMAIL) || strlen($valores['correo']) > 80) {
             $error = 'Escribe un correo electrónico válido.';
+        } elseif (preg_match('/\s/u', $password) || preg_match('/\s/u', $confirmar)) {
+            $error = 'La contraseña no debe contener espacios.';
         } elseif (strlen($password) < 8) {
             $error = 'La contraseña debe tener al menos 8 caracteres.';
         } elseif (strlen($password) > 72) {
@@ -187,7 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="input-group">
             <label for="password">Contraseña</label>
             <div class="input-wrapper">
-              <input type="password" id="password" name="password" minlength="8" maxlength="72" autocomplete="new-password" required>
+              <input type="password" id="password" name="password" minlength="8" maxlength="72" pattern="^\S+$" title="No se permiten espacios en la contraseña" autocomplete="new-password" required>
               <i class="fa-regular fa-eye icon-toggle-password" id="togglePassword"></i>
             </div>
           </div>
@@ -195,14 +197,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="input-group">
             <label for="confirmPassword">Confirmar contraseña</label>
             <div class="input-wrapper">
-              <input type="password" id="confirmPassword" name="confirmar" minlength="8" maxlength="72" autocomplete="new-password" required>
+              <input type="password" id="confirmPassword" name="confirmar" minlength="8" maxlength="72" pattern="^\S+$" title="No se permiten espacios en la contraseña" autocomplete="new-password" required>
               <i class="fa-regular fa-eye icon-toggle-password" id="toggleConfirmPassword"></i>
             </div>
           </div>
         </div>
 
-        <p class="form-help-text" id="passwordError" style="color: red; display: none;">Las contraseñas no coinciden.</p>
-        <p class="form-help-text">Mínimo 8 caracteres.</p>
+        <p class="form-help-text" id="passwordError" style="color: red; display: none;"></p>
+        <p class="form-help-text">Mínimo 8 caracteres, sin espacios.</p>
 
         <!-- Botón submit -->
         <button type="submit" class="btn-submit">Crear cuenta</button>
@@ -220,16 +222,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <!-- Script de validación de contraseñas y visibilidad -->
   <script>
-    function validarContrasenas() {
-      const pass = document.getElementById('password').value;
-      const confirmPass = document.getElementById('confirmPassword').value;
-      const errorText = document.getElementById('passwordError');
+    const passInput = document.getElementById('password');
+    const confirmInput = document.getElementById('confirmPassword');
+    const errorText = document.getElementById('passwordError');
 
-      if (pass !== confirmPass) {
-        errorText.style.display = 'block';
+    function mostrarErrorPassword(msg) {
+      if (!errorText) return;
+      errorText.textContent = msg;
+      errorText.style.display = 'block';
+    }
+
+    function ocultarErrorPassword() {
+      if (!errorText) return;
+      errorText.textContent = '';
+      errorText.style.display = 'none';
+    }
+
+    [passInput, confirmInput].forEach(campo => {
+      if (!campo) return;
+      campo.addEventListener('input', function () {
+        if (/\s/.test(this.value)) {
+          this.value = this.value.replace(/\s+/g, '');
+        }
+        ocultarErrorPassword();
+      });
+    });
+
+    function validarContrasenas() {
+      const pass = passInput ? passInput.value : '';
+      const confirmPass = confirmInput ? confirmInput.value : '';
+
+      if (/\s/.test(pass) || /\s/.test(confirmPass)) {
+        mostrarErrorPassword('La contraseña no debe contener espacios.');
         return false;
       }
-      errorText.style.display = 'none';
+
+      if (pass !== confirmPass) {
+        mostrarErrorPassword('Las contraseñas no coinciden.');
+        return false;
+      }
+
+      ocultarErrorPassword();
       return true;
     }
 

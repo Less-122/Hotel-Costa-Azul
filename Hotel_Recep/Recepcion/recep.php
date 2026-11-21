@@ -14,9 +14,9 @@ function fecha(string $f, bool $con_anio = false): string {
 }
 
 /**
- * Valida fechas de entrada y salida bajo las mismas reglas que Reser.php:
- * formato Y-m-d válido, no anterior a hoy, máximo 365 días de anticipación,
- * salida posterior a entrada y máximo 90 noches de estancia.
+- Valida fechas de entrada y salida bajo las mismas reglas que Reser.php:
+- formato Y-m-d válido, no anterior a hoy, máximo 365 días de anticipación,
+- salida posterior a entrada y máximo 90 noches de estancia.
  */
 function validarFechas(string $entrada, string $salida): string {
     $e = DateTime::createFromFormat('!Y-m-d', $entrada);
@@ -48,9 +48,9 @@ function validarFechas(string $entrada, string $salida): string {
 }
 
 /**
- * Extrae las horas mínimas de anticipación a partir de la descripción de la política.
- * Soporta textos como "48 horas antes", "72 hrs", "3 días antes", "dos días", etc.
- * Si se redacta de otra forma sin plazo claro, devuelve $horas_defecto (72 horas).
+- Extrae las horas mínimas de anticipación a partir de la descripción de la política.
+- Soporta textos como "48 horas antes", "72 hrs", "3 días antes", "dos días", etc.
+- Si se redacta de otra forma sin plazo claro, devuelve $horas_defecto (72 horas).
  */
 function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72): int {
     $texto = trim($descripcion);
@@ -114,7 +114,7 @@ function obtenerHorasAnticipacion(string $descripcion, int $horas_defecto = 72):
 }
 
 /**
- * Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
+- Determina si la política contempla el cobro de la primera noche tras vencer el plazo gratuito.
  */
 function politicaCobraPrimeraNoche(string $descripcion): bool {
     $texto = trim($descripcion);
@@ -130,9 +130,9 @@ function politicaCobraPrimeraNoche(string $descripcion): bool {
 }
 
 /**
- * Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
- * abreviaturas con punto (ej. Ma., J.), partículas en minúscula (de, del, la, etc.),
- * guiones (García-López) y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
+- Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
+- abreviaturas con punto (ej. Ma., J.), partículas en minúscula (de, del, la, etc.),
+- guiones (García-López) y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
  */
 function validarNombreFormato(string $nombre): bool {
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
@@ -479,6 +479,20 @@ if ($accion === 'cancelar_reservacion') {
                 if ($monto_penalizacion > 0) {
                     $notas_extra[] = "[Penalización por cancelación tardía: $" . number_format($monto_penalizacion, 2) . " (1ra noche)]";
 
+                    // Parte retenida de pagos ya cobrados (se marca como 'Retención' para reflejarse en Penalización sin duplicar ingresos)
+                    $retenido_pagado = ($ya_pagado > 0)
+                        ? min($monto_penalizacion, $ya_pagado)
+                        : 0.0;
+                    $retenido_pagado = round($retenido_pagado, 2);
+                    if ($retenido_pagado > 0) {
+                        $st_ret = $conexion->prepare(
+                            "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                             VALUES (?, NOW(), 'Penalización', 'Retención', ?, ?)"
+                        );
+                        $st_ret->execute([$retenido_pagado, $id_reservacion_cancelar, $id_usuario]);
+                    }
+
+                    // Cargo adicional pendiente si la penalización supera lo ya pagado
                     $cargo_a_registrar = max(0.0, round($monto_penalizacion - $ya_pagado, 2));
                     if ($cargo_a_registrar > 0) {
                         $st_cargo = $conexion->prepare(
@@ -1086,7 +1100,8 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
       }
       if (montoPagado > 0) {
         const reembolso = Math.max(0, montoPagado - penalizacion);
-        mensaje += `\n\nPagos registrados: $${montoPagado.toFixed(2)} · Devolución a registrar: -$${reembolso.toFixed(2)}.`;
+        const devolucionTexto = reembolso > 0 ? `-$${reembolso.toFixed(2)}` : `$0.00`;
+        mensaje += `\n\nPagos registrados: $${montoPagado.toFixed(2)} · Devolución a registrar: ${devolucionTexto}.`;
       }
       return confirm(mensaje);
     }

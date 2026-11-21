@@ -53,7 +53,11 @@ function validarFechas(string $entrada, string $salida): string {
     return '';
 }
 
-/** Habitaciones libres por tipo en el rango dado: ['Sencilla' => 3, 'Doble' => 0, ...] */
+/**
+ * Habitaciones libres por tipo en el rango dado: ['Sencilla' => 3, 'Doble' => 0, ...]
+ * La disponibilidad por fecha depende de reservaciones Activas o En curso que se traslapen,
+ * excluyendo Mantenimiento y respetando h.disponible cuando la entrada consultada es hoy.
+ */
 function disponibilidad(PDO $conexion, string $entrada, string $salida): array {
     $solo_libres = ($entrada === date('Y-m-d')) ? " AND h.disponible = 1" : "";
     $stmt = $conexion->prepare(
@@ -73,7 +77,7 @@ function disponibilidad(PDO $conexion, string $entrada, string $salida): array {
     return $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 }
 
-$hoy_str      = date('Y-m-d');
+$hoy_str       = date('Y-m-d');
 $max_fecha_str = (new DateTime('today'))->modify('+' . MAX_DIAS_ANTICIPACION . ' days')->format('Y-m-d');
 
 // Fechas: se validan siempre en el servidor y se conserva lo escrito si hay error
@@ -377,6 +381,7 @@ if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
     const precios = <?php echo json_encode($precios); ?>;
     const noches  = <?php echo (int) $noches; ?>;
     const maxFecha = <?php echo json_encode($max_fecha_str); ?>;
+    const maxNoches = <?php echo MAX_NOCHES_ESTANCIA; ?>;
 
     const inputEntrada = document.getElementById('entrada');
     const inputSalida  = document.getElementById('salida');
@@ -389,23 +394,30 @@ if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
       return d.toISOString().slice(0, 10);
     }
 
-    function actualizarMinSalida() {
+    function actualizarRangoSalida() {
       if (!inputEntrada || !inputSalida || !inputEntrada.value) return;
       const minSal = sumarDiasISO(inputEntrada.value, 1);
+      const maxPorEstancia = sumarDiasISO(inputEntrada.value, maxNoches);
       if (!minSal) return;
 
       inputSalida.min = minSal;
-      if (inputSalida.max && inputSalida.min > inputSalida.max) {
+      const maxEfectivo = (maxPorEstancia && maxPorEstancia < maxFecha) ? maxPorEstancia : maxFecha;
+      inputSalida.max = maxEfectivo;
+
+      if (inputSalida.min > inputSalida.max) {
         inputSalida.min = inputSalida.max;
       }
       if (inputSalida.value && inputSalida.value < inputSalida.min) {
         inputSalida.value = inputSalida.min;
       }
+      if (inputSalida.value && inputSalida.value > inputSalida.max) {
+        inputSalida.value = inputSalida.max;
+      }
     }
 
     if (inputEntrada && inputSalida) {
-      actualizarMinSalida();
-      inputEntrada.addEventListener('change', actualizarMinSalida);
+      actualizarRangoSalida();
+      inputEntrada.addEventListener('change', actualizarRangoSalida);
     }
 
     function seleccionarHabitacion(tipo, card) {

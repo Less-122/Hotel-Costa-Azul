@@ -108,6 +108,15 @@ function claveIntentoLogin(string $contexto, string $identificador = ''): string
 }
 
 /**
+ * Devuelve la clave de seguimiento correspondiente: si hay identificador (correo),
+ * el contador pertenece exclusivamente a esa cuenta en ese contexto e IP.
+ */
+function claveRastreoPorCuenta(string $contexto, string $identificador = ''): string {
+    $idLimpio = mb_strtolower(trim($identificador), 'UTF-8');
+    return claveIntentoLogin($contexto, $idLimpio);
+}
+
+/**
  * Lee el registro persistente de intentos de login desde el directorio temporal del sistema.
  */
 function leerEstadoIntentoLogin(string $clave): array {
@@ -135,32 +144,20 @@ function guardarEstadoIntentoLogin(string $clave, array $estado): void {
 }
 
 /**
- * Verifica si el usuario/IP está temporalmente bloqueado por exceso de intentos fallidos.
+ * Verifica si la cuenta/identificador está temporalmente bloqueado por exceso de intentos fallidos.
  * Devuelve ['bloqueado' => bool, 'segundos_restantes' => int, 'mensaje' => string].
  */
 function verificarBloqueoLogin(string $contexto, string $identificador = ''): array {
     $ahora = time();
-    $claves = [
-        claveIntentoLogin($contexto, ''),
-        claveIntentoLogin($contexto, $identificador),
-    ];
+    $clave = claveRastreoPorCuenta($contexto, $identificador);
+    $estado = leerEstadoIntentoLogin($clave);
 
-    $maxRestante = 0;
-    foreach ($claves as $clave) {
-        $estado = leerEstadoIntentoLogin($clave);
-        if ($estado['bloqueado_hasta'] > $ahora) {
-            $restante = $estado['bloqueado_hasta'] - $ahora;
-            if ($restante > $maxRestante) {
-                $maxRestante = $restante;
-            }
-        }
-    }
-
-    if ($maxRestante > 0) {
-        $minutos = (int) ceil($maxRestante / 60);
+    if ($estado['bloqueado_hasta'] > $ahora) {
+        $restante = $estado['bloqueado_hasta'] - $ahora;
+        $minutos = (int) ceil($restante / 60);
         return [
             'bloqueado'          => true,
-            'segundos_restantes' => $maxRestante,
+            'segundos_restantes' => $restante,
             'mensaje'            => "Demasiados intentos fallidos. Por seguridad, espera {$minutos} minuto(s) antes de volver a intentarlo.",
         ];
     }
@@ -173,53 +170,38 @@ function verificarBloqueoLogin(string $contexto, string $identificador = ''): ar
 }
 
 /**
- * Registra un intento fallido de inicio de sesión y bloquea al alcanzar LOGIN_MAX_INTENTOS.
+ * Registra un intento fallido de inicio de sesión para la cuenta indicada y bloquea al alcanzar LOGIN_MAX_INTENTOS.
  * Devuelve los intentos restantes antes del bloqueo (0 si acaba de bloquearse).
  */
 function registrarIntentoFallidoLogin(string $contexto, string $identificador = ''): int {
     $ahora = time();
-    $claves = array_unique([
-        claveIntentoLogin($contexto, ''),
-        claveIntentoLogin($contexto, $identificador),
-    ]);
+    $clave = claveRastreoPorCuenta($contexto, $identificador);
+    $estado = leerEstadoIntentoLogin($clave);
 
-    $restantesMin = LOGIN_MAX_INTENTOS;
-    foreach ($claves as $clave) {
-        $estado = leerEstadoIntentoLogin($clave);
-        if ($estado['bloqueado_hasta'] > 0 && $estado['bloqueado_hasta'] <= $ahora) {
-            $estado = ['intentos' => 0, 'bloqueado_hasta' => 0];
-        }
-
-        $estado['intentos']++;
-        if ($estado['intentos'] >= LOGIN_MAX_INTENTOS) {
-            $estado['bloqueado_hasta'] = $ahora + LOGIN_VENTANA_SEGUNDOS;
-            $restantes = 0;
-        } else {
-            $restantes = LOGIN_MAX_INTENTOS - $estado['intentos'];
-        }
-
-        if ($restantes < $restantesMin) {
-            $restantesMin = $restantes;
-        }
-        guardarEstadoIntentoLogin($clave, $estado);
+    if ($estado['bloqueado_hasta'] > 0 && $estado['bloqueado_hasta'] <= $ahora) {
+        $estado = ['intentos' => 0, 'bloqueado_hasta' => 0];
     }
 
-    return $restantesMin;
+    $estado['intentos']++;
+    if ($estado['intentos'] >= LOGIN_MAX_INTENTOS) {
+        $estado['bloqueado_hasta'] = $ahora + LOGIN_VENTANA_SEGUNDOS;
+        $restantes = 0;
+    } else {
+        $restantes = LOGIN_MAX_INTENTOS - $estado['intentos'];
+    }
+
+    guardarEstadoIntentoLogin($clave, $estado);
+    return $restantes;
 }
 
 /**
- * Limpia el contador de intentos fallidos tras un inicio de sesión exitoso.
+ * Limpia el contador de intentos fallidos de la cuenta tras un inicio de sesión exitoso.
  */
 function limpiarIntentosLogin(string $contexto, string $identificador = ''): void {
-    $claves = array_unique([
-        claveIntentoLogin($contexto, ''),
-        claveIntentoLogin($contexto, $identificador),
-    ]);
-    foreach ($claves as $clave) {
-        $archivo = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hca_login_' . $clave . '.json';
-        if (is_file($archivo)) {
-            @unlink($archivo);
-        }
+    $clave = claveRastreoPorCuenta($contexto, $identificador);
+    $archivo = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hca_login_' . $clave . '.json';
+    if (is_file($archivo)) {
+        @unlink($archivo);
     }
 }
 
