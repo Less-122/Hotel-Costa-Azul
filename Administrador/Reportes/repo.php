@@ -13,6 +13,13 @@ function fecha(string $f): string {
     return date('d', $t) . ' ' . $abrev[date('n', $t) - 1] . ' ' . date('Y', $t);
 }
 
+function formatoMoneda(float $monto): string {
+    if ($monto < 0) {
+        return '-$' . number_format(abs($monto), 2);
+    }
+    return '$' . number_format($monto, 2);
+}
+
 // --- Periodo: mes (por defecto), anterior o rango ---
 $periodo_raw   = $_GET['periodo'] ?? 'mes';
 $periodo       = is_string($periodo_raw) ? $periodo_raw : 'mes';
@@ -61,38 +68,75 @@ $etiqueta = ($periodo === 'rango')
 
 $rango = ['desde' => $desde->format('Y-m-d'), 'hasta' => $hasta->format('Y-m-d')];
 
-// 1. Pagos del periodo (excluyendo pagos de reservaciones que terminaron canceladas)
+// Compatibilidad con datos antiguos: antes la penalización retenida se guardaba como una fila
+// extra Penalización/Retención que duplicaba el saldo. Ya no se inserta; si existen filas
+// viejas se ignoran en los totales para no contarlas dos veces.
+$es_retencion_previa = "(p.tipo_pago = 'Penalización' AND p.canal_pago = 'Retención')";
+
+// 1. Movimientos registrados en pago dentro del periodo (separando penalizaciones y devoluciones)
 $st = $conexion->prepare("
-    SELECT COALESCE(SUM(p.monto), 0) AS total,
-           COALESCE(SUM(CASE WHEN p.tipo_pago = 'Anticipo'    THEN p.monto ELSE 0 END), 0) AS anticipo,
-           COALESCE(SUM(CASE WHEN p.tipo_pago = 'Liquidación' THEN p.monto ELSE 0 END), 0) AS liquidacion,
-           COALESCE(SUM(CASE WHEN p.canal_pago LIKE '%línea%' THEN p.monto ELSE 0 END), 0) AS en_linea
+    SELECT COALESCE(SUM(CASE
+               WHEN {$es_retencion_previa} THEN 0
+               ELSE p.monto
+           END), 0) AS total,
+           COALESCE(SUM(CASE
+               WHEN p.tipo_pago = 'Devolución' OR p.monto < 0 THEN p.monto
+               ELSE 0
+           END), 0) AS devoluciones,
+           COALESCE(SUM(CASE
+               WHEN p.tipo_pago = 'Anticipo' AND p.monto > 0 THEN p.monto
+               ELSE 0
+           END), 0) AS anticipo,
+           COALESCE(SUM(CASE
+               WHEN p.tipo_pago = 'Liquidación' AND p.monto > 0 AND p.canal_pago <> 'Sistema' THEN p.monto
+               ELSE 0
+           END), 0) AS liquidacion,
+           COALESCE(SUM(CASE
+               WHEN p.canal_pago LIKE '%línea%' AND p.monto > 0 AND NOT ({$es_retencion_previa}) THEN p.monto
+               ELSE 0
+           END), 0) AS en_linea
     FROM pago p
-    JOIN reservacion r ON p.id_reservacion = r.id_reservacion
     WHERE p.fecha_hora >= :desde AND p.fecha_hora < :hasta
-      AND r.estado <> 'Cancelada'
 ");
 $st->execute($rango);
 $pagos = $st->fetch(PDO::FETCH_ASSOC);
 
-$total_ingresos      = (float) $pagos['total'];
-$ingreso_anticipo    = (float) $pagos['anticipo'];
-$ingreso_liquidacion = (float) $pagos['liquidacion'];
-$ingreso_en_linea    = (float) $pagos['en_linea'];
-$ingreso_terminal    = $total_ingresos - $ingreso_en_linea;
+$total_ingresos       = (float) $pagos['total'];
+$total_devoluciones   = (float) $pagos['devoluciones'];
+$ingreso_anticipo     = (float) $pagos['anticipo'];
+$ingreso_liquidacion  = (float) $pagos['liquidacion'];
+$ingreso_en_linea     = (float) $pagos['en_linea'];
+$ingreso_terminal     = $total_ingresos - $ingreso_en_linea;
+
+// Penalización retenida: lo que queda neto en pago de las reservaciones canceladas en el periodo
+// (pagos menos devolución). Ya está incluida en los ingresos; aquí solo se desglosa.
+$st = $conexion->prepare("
+    SELECT COALESCE(SUM(GREATEST(0, x.neto)), 0)
+    FROM (
+        SELECT r.id_reservacion,
+               SUM(CASE WHEN {$es_retencion_previa} THEN 0 ELSE p.monto END) AS neto
+        FROM reservacion r
+        JOIN pago p ON p.id_reservacion = r.id_reservacion
+        WHERE r.estado = 'Cancelada'
+          AND r.fecha_modificacion >= :desde AND r.fecha_modificacion < :hasta
+        GROUP BY r.id_reservacion
+    ) x
+");
+$st->execute($rango);
+$ingreso_penalizacion = (float) $st->fetchColumn();
 
 // 2. Reservaciones registradas en el periodo, por estado
 $st = $conexion->prepare("
     SELECT estado, COUNT(*)
     FROM reservacion
-    WHERE estado IN ('Activa', 'Cancelada')
+    WHERE estado IN ('Activa', 'En curso', 'Cancelada')
       AND fecha_registro >= :desde AND fecha_registro < :hasta
     GROUP BY estado
 ");
 $st->execute($rango);
 $reservas = $st->fetchAll(PDO::FETCH_KEY_PAIR);
 
-$reservas_activas    = $reservas['Activa'] ?? 0;
+$reservas_activas    = ($reservas['Activa'] ?? 0) + ($reservas['En curso'] ?? 0);
 $reservas_canceladas = $reservas['Cancelada'] ?? 0;
 
 // 3. Ocupación calculada por noches reservadas dentro del periodo seleccionado
@@ -100,11 +144,11 @@ $total_dias_periodo = max(1, $desde->diff($hasta)->days);
 $total_habitaciones_hotel = (int) $conexion->query("SELECT COUNT(*) FROM habitacion WHERE estado_limpieza <> 'Mantenimiento'")->fetchColumn();
 $capacitacion_total_noches = $total_dias_periodo * max(1, $total_habitaciones_hotel);
 
-// Consultar reservaciones activas que cruzan el periodo para sumar sus noches dentro del rango
+// Consultar reservaciones activas o en curso que cruzan el periodo para sumar sus noches dentro del rango
 $st_noches = $conexion->prepare("
     SELECT fecha_entrada, fecha_salida
     FROM reservacion
-    WHERE estado = 'Activa'
+    WHERE estado IN ('Activa', 'En curso')
       AND fecha_entrada < :hasta
       AND fecha_salida > :desde
 ");
@@ -132,7 +176,7 @@ $st_t_occ = $conexion->prepare("
     SELECT r.fecha_entrada, r.fecha_salida
     FROM reservacion r
     JOIN habitacion h ON r.numero_habitacion = h.numero_habitacion
-    WHERE h.tipo_habitacion = ? AND r.estado = 'Activa' AND r.fecha_entrada < ? AND r.fecha_salida > ?
+    WHERE h.tipo_habitacion = ? AND r.estado IN ('Activa', 'En curso') AND r.fecha_entrada < ? AND r.fecha_salida > ?
 ");
 
 foreach ($tipos_habitacion_lista as $tipo) {
@@ -158,13 +202,12 @@ foreach ($tipos_habitacion_lista as $tipo) {
     ];
 }
 
-// 4. Ingresos por semana dentro del periodo (excluyendo canceladas)
+// 4. Ingresos por semana dentro del periodo según movimientos en pago (sin duplicar retención previa)
 $st = $conexion->prepare("
-    SELECT DATE(p.fecha_hora) AS dia, SUM(p.monto) AS total
+    SELECT DATE(p.fecha_hora) AS dia,
+           SUM(CASE WHEN {$es_retencion_previa} THEN 0 ELSE p.monto END) AS total
     FROM pago p
-    JOIN reservacion r ON p.id_reservacion = r.id_reservacion
     WHERE p.fecha_hora >= :desde AND p.fecha_hora < :hasta
-      AND r.estado <> 'Cancelada'
     GROUP BY DATE(p.fecha_hora)
 ");
 $st->execute($rango);
@@ -197,6 +240,7 @@ for ($i = 0; $i < $dias; $i += 7) {
         a.filter-btn { text-decoration: none; display: inline-block; }
         .range-form { display: inline-flex; align-items: center; gap: 8px; margin-left: 12px; font-size: 13px; }
         .range-form input { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; }
+        .monto-negativo { color: #dc2626 !important; font-weight: 700; }
     </style>
 </head>
 <body>
@@ -241,8 +285,8 @@ for ($i = 0; $i < $dias; $i += 7) {
             </div>
 
             <div class="kpi-grid">
-                <div class="kpi-card card-green">
-                    <span class="kpi-value">$<?php echo number_format($total_ingresos, 2); ?></span>
+                <div class="kpi-card <?php echo $total_ingresos < 0 ? 'card-red' : 'card-green'; ?>">
+                    <span class="kpi-value <?php echo $total_ingresos < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($total_ingresos); ?></span>
                     <span class="kpi-label">Ingresos del periodo</span>
                 </div>
                 <div class="kpi-card card-blue">
@@ -295,11 +339,19 @@ for ($i = 0; $i < $dias; $i += 7) {
                 <h4>Ingresos por tipo de pago</h4>
                 <div class="summary-box">
                     <span>Anticipo</span>
-                    <strong>$<?php echo number_format($ingreso_anticipo, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_anticipo < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_anticipo); ?></strong>
                 </div>
                 <div class="summary-box">
                     <span>Liquidación</span>
-                    <strong>$<?php echo number_format($ingreso_liquidacion, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_liquidacion < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_liquidacion); ?></strong>
+                </div>
+                <div class="summary-box">
+                    <span>Penalización retenida</span>
+                    <strong class="<?php echo $ingreso_penalizacion < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_penalizacion); ?></strong>
+                </div>
+                <div class="summary-box">
+                    <span>Devoluciones</span>
+                    <strong class="<?php echo $total_devoluciones < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($total_devoluciones); ?></strong>
                 </div>
             </div>
 
@@ -307,16 +359,16 @@ for ($i = 0; $i < $dias; $i += 7) {
                 <h4>Ingresos por canal</h4>
                 <div class="summary-box">
                     <span>Pasarela en línea</span>
-                    <strong>$<?php echo number_format($ingreso_en_linea, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_en_linea < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_en_linea); ?></strong>
                 </div>
                 <div class="summary-box">
                     <span>Terminal recepción</span>
-                    <strong>$<?php echo number_format($ingreso_terminal, 2); ?></strong>
+                    <strong class="<?php echo $ingreso_terminal < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_terminal); ?></strong>
                 </div>
             </div>
 
             <p class="disclaimer-text">
-                Los ingresos excluyen pagos de reservaciones canceladas. La ocupación se calcula por noches reservadas dentro del periodo.
+                Los ingresos reflejan los pagos menos las devoluciones del periodo. La penalización retenida (primera noche de cancelaciones tardías y no-show) ya está incluida en ellos. La ocupación se calcula por noches reservadas dentro del periodo.
             </p>
         </aside>
 
@@ -340,11 +392,28 @@ for ($i = 0; $i < $dias; $i += 7) {
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: {
-                        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toLocaleString('es-MX') } }
+                        y: { beginAtZero: true, ticks: { callback: v => (v < 0 ? '-$' + Math.abs(v).toLocaleString('es-MX') : '$' + v.toLocaleString('es-MX')) } }
                     }
                 }
             });
         }
+
+        (() => {
+            const UMBRAL_SLA_MS = 3000;
+            const tInicioVista  = performance.now();
+
+            window.addEventListener('load', () => {
+                const nav = performance.getEntriesByType('navigation')[0];
+                const ms  = nav
+                    ? Math.round(nav.responseEnd - nav.startTime)
+                    : Math.round(performance.now() - tInicioVista);
+
+                console.info(`[Rendimiento repo.php] ${ms} ms | SLA <= 3000ms: ${ms <= UMBRAL_SLA_MS ? 'OK' : 'EXCEDIDO'}`);
+                if (ms > UMBRAL_SLA_MS) {
+                    console.warn(`[SLA >3s] La carga de repo.php tardó ${ms} ms.`);
+                }
+            });
+        })();
     </script>
 </body>
 </html>

@@ -2,6 +2,10 @@
 require_once '../../config/conexion.php';
 require_once '../../config/sesion.php';
 
+if (!isset($conexion) || !($conexion instanceof PDO)) {
+    $conexion = obtenerConexion();
+}
+
 // Si ya hay sesión iniciada, mandamos a cada quien a su página
 if (isset($_SESSION['id_usuario'])) {
     header("Location: " . paginaInicioRol(rolActual()));
@@ -15,36 +19,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $correo = trim($_POST['correo'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if (!empty($correo) && !empty($password)) {
-        try {
-            $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo";
-            $stmt = $conexion->prepare($sql);
-            $stmt->bindParam(':correo', $correo);
-            $stmt->execute();
-            $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            // Solo se acepta el hash guardado en la BD (password_hash / password_verify)
-            if ($usuario && password_verify($password, $usuario['password'])) {
-                if (strtolower($usuario['rol']) !== 'huesped') {
-                    $errorMsg = "Esta cuenta es del personal del hotel. Ingresa por el portal de personal.";
-                } else {
-                    session_regenerate_id(true);
-                    $_SESSION['id_usuario'] = $usuario['id_usuario'];
-                    $_SESSION['nombre'] = $usuario['nombre'];
-                    $_SESSION['rol'] = 'Huesped';
-
-                    header("Location: ../Reserva/Reser.php");
-                    exit();
-                }
-            } else {
-                $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos.";
-            }
-        } catch (PDOException $e) {
-            error_log('Login huésped: ' . $e->getMessage());
-            $errorMsg = "Error en el sistema. Inténtalo de nuevo.";
-        }
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $errorMsg = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
     } else {
-        $errorMsg = "Por favor, completa todos los campos.";
+        $bloqueo = verificarBloqueoLogin('huesped', $correo);
+        if ($bloqueo['bloqueado']) {
+            $errorMsg = $bloqueo['mensaje'];
+        } elseif ($correo === '' || $password === '') {
+            $errorMsg = "Por favor, completa todos los campos.";
+        } elseif (preg_match('/\s/u', $password)) {
+            $errorMsg = "La contraseña no debe contener espacios.";
+        } else {
+            try {
+                $sql = "SELECT id_usuario, nombre, password, rol FROM usuario WHERE correo = :correo LIMIT 1";
+                $stmt = $conexion->prepare($sql);
+                $stmt->execute([':correo' => $correo]);
+                $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                // Solo se acepta el hash guardado en la BD (password_hash / password_verify)
+                if ($usuario && password_verify($password, $usuario['password'])) {
+                    if (strtolower($usuario['rol']) !== 'huesped') {
+                        $restantes = registrarIntentoFallidoLogin('huesped', $correo);
+                        $errorMsg = "Esta cuenta es del personal del hotel. Ingresa por el portal de personal."
+                            . ($restantes > 0 ? " Te quedan {$restantes} intento(s)." : "");
+                    } else {
+                        limpiarIntentosLogin('huesped', $correo);
+                        session_regenerate_id(true);
+                        $_SESSION['id_usuario'] = $usuario['id_usuario'];
+                        $_SESSION['nombre'] = $usuario['nombre'];
+                        $_SESSION['rol'] = 'Huesped';
+
+                        header("Location: ../Reserva/Reser.php");
+                        exit();
+                    }
+                } else {
+                    $restantes = registrarIntentoFallidoLogin('huesped', $correo);
+                    if ($restantes <= 0) {
+                        $minutos = (int) ceil(LOGIN_VENTANA_SEGUNDOS / 60);
+                        $errorMsg = "Has excedido el límite de intentos permitidos. Por seguridad, el acceso se bloqueó por {$minutos} minuto(s).";
+                    } else {
+                        $errorMsg = "Correo o contraseña incorrectos. Revisa tus datos. Te quedan {$restantes} intento(s).";
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log('Login huésped: ' . $e->getMessage());
+                $errorMsg = "Error en el sistema. Inténtalo de nuevo.";
+            }
+        }
     }
 }
 
@@ -94,6 +115,7 @@ $registroOk = (($_GET['registro'] ?? '') === 'ok');
       <?php endif; ?>
 
       <form id="loginForm" class="login-form" method="POST" action="">
+        <?php echo campoCsrf(); ?>
         <div class="input-group">
           <label for="username">Correo electrónico</label>
           <div class="input-wrapper">
@@ -105,7 +127,7 @@ $registroOk = (($_GET['registro'] ?? '') === 'ok');
           <label for="password">Contraseña</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-lock icon-left"></i>
-            <input type="password" id="password" name="password" required>
+            <input type="password" id="password" name="password" pattern="^\S+$" title="No se permiten espacios en la contraseña" required>
             <i class="fa-regular fa-eye icon-toggle-password" id="togglePassword"></i>
           </div>
         </div>
@@ -124,6 +146,13 @@ $registroOk = (($_GET['registro'] ?? '') === 'ok');
         const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
         passwordInput.setAttribute('type', type);
         this.classList.toggle('fa-eye-slash');
+      });
+    }
+    if (passwordInput) {
+      passwordInput.addEventListener('input', function () {
+        if (/\s/.test(this.value)) {
+          this.value = this.value.replace(/\s+/g, '');
+        }
       });
     }
   </script>

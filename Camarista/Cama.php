@@ -10,6 +10,12 @@ $estados_validos = ['Limpia', 'Sucia', 'Mantenimiento'];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_habitacion']) && isset($_POST['nuevo_estado'])) {
     header('Content-Type: application/json; charset=utf-8');
 
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Error de validación de seguridad. Recarga la página e inténtalo de nuevo.']);
+        exit();
+    }
+
     $numero_habitacion = trim($_POST['id_habitacion']);
     $nuevo_estado      = trim($_POST['nuevo_estado']);
 
@@ -26,22 +32,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_habitacion']) && i
             exit();
         }
 
-        // RN-03: Si se intenta cambiar a Mantenimiento, verificar si tiene reservaciones activas vigentes
+        // RN-03: Solo bloquear Mantenimiento si hay una reservación activa o en curso hoy (no reservas futuras lejanas)
         if ($nuevo_estado === 'Mantenimiento') {
             $hoy_fecha = date('Y-m-d');
             $st_check = $conexion->prepare("
                 SELECT COUNT(*) FROM reservacion 
                 WHERE numero_habitacion = ? 
-                  AND estado = 'Activa' 
-                  AND fecha_salida >= ?
+                  AND estado IN ('Activa', 'En curso') 
+                  AND fecha_entrada <= ?
+                  AND fecha_salida > ?
             ");
-            $st_check->execute([$numero_habitacion, $hoy_fecha]);
+            $st_check->execute([$numero_habitacion, $hoy_fecha, $hoy_fecha]);
             $reservaciones_activas = (int) $st_check->fetchColumn();
 
             if ($reservaciones_activas > 0) {
                 echo json_encode([
                     'success' => false, 
-                    'error' => "No se puede poner en Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) (RN-03)."
+                    'error' => "No se puede poner en Mantenimiento: la habitación cuenta con {$reservaciones_activas} reservación(es) activa(s) o en curso hoy (RN-03)."
                 ]);
                 exit();
             }
@@ -85,6 +92,7 @@ foreach ($habitaciones as $h) {
 }
 
 $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
+$csrf_token     = obtenerCsrfToken();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -200,6 +208,8 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
 
   <!-- Script para interactuar con la Base de Datos vía fetch / AJAX -->
   <script>
+    const csrfToken = <?php echo json_encode($csrf_token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+
     function toggleCard(headerElement) {
       const card = headerElement.closest('.room-card');
       const body = card.querySelector('.room-card-body');
@@ -225,6 +235,7 @@ $nombre_usuario = $_SESSION['nombre'] ?? 'Camarista';
       const formData = new FormData();
       formData.append('id_habitacion', roomNumber);
       formData.append('nuevo_estado', newState);
+      formData.append('csrf_token', csrfToken);
 
       fetch('', {
         method: 'POST',

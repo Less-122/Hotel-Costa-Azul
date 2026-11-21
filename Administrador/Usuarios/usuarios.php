@@ -14,21 +14,34 @@ $mensaje_exito = $avisos[$_GET['ok'] ?? ''] ?? '';
 $mensaje_error = '';
 
 $id_sesion = (int) $_SESSION['id_usuario'];
+
 /**
- * Valida que el nombre contenga solo letras (incluyendo acentos y ñ) y puntos válidos,iniciando 
- * con una letra en mayúscula y continuando en minúsculas.
+ * Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
+ * abreviaturas con punto (ej. Ma., J.), partículas en minúscula (de, del, la, etc.),
+ * guiones (García-López) y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
  */
 function validarNombreFormato(string $nombre): bool {
-    // Evitar espacios múltiples, tabs o saltos de línea
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
         return false;
     }
 
+    $particulasMinuscula = ['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'dos', 'van', 'von'];
     $palabras = explode(' ', $nombre);
+
     foreach ($palabras as $palabra) {
-        // Palabra normal: Mayúscula inicial seguida de minúsculas (ej. "María", "López")
-        // o abreviatura con punto al final: Mayúscula + minúsculas opcionales + "." (ej. "Ma.", "J.")
-        if (!preg_match('/^\p{Lu}\p{Ll}+\.?$/u', $palabra) && !preg_match('/^\p{Lu}\.$/u', $palabra)) {
+        $palabraMinuscula = mb_strtolower($palabra, 'UTF-8');
+        if (in_array($palabraMinuscula, $particulasMinuscula, true)) {
+            if ($palabra !== $palabraMinuscula) {
+                return false;
+            }
+            continue;
+        }
+
+        $normalizada = str_replace('’', "'", $palabra);
+        $patronSegmento = '(?:\p{Lu}\.|\p{Lu}\p{Ll}+\.?)';
+        $patronPalabra  = '/^' . $patronSegmento . "(?:[-']" . $patronSegmento . ')*$/u';
+
+        if (!preg_match($patronPalabra, $normalizada)) {
             return false;
         }
     }
@@ -40,6 +53,11 @@ function validarNombreFormato(string $nombre): bool {
 $form = ['id_usuario' => 0, 'nombre' => '', 'contacto' => '', 'correo' => '', 'rol' => 'Recepcionista'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
+        goto render_page;
+    }
+
     $id = (int) ($_POST['id_usuario'] ?? 0);
 
     // ELIMINAR
@@ -115,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (mb_strlen($form['nombre']) > 100) {
             $mensaje_error = "El nombre no puede exceder los 100 caracteres.";
         } elseif (!validarNombreFormato($form['nombre'])) {
-            $mensaje_error = "El nombre solo puede contener letras y puntos (sin números), iniciando cada palabra con mayúscula y siguiendo con minúsculas (ej. Ana Ma. López).";
+            $mensaje_error = "El nombre solo puede contener letras, puntos, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).";
         } elseif (!preg_match('/^\d{10}$/', $form['contacto'])) {
             $mensaje_error = "El contacto debe tener 10 dígitos.";
         } elseif (!filter_var($form['correo'], FILTER_VALIDATE_EMAIL) || mb_strlen($form['correo']) > 80) {
@@ -124,6 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $mensaje_error = "Rol no válido.";
         } elseif (($id === 0 || $password !== '') && mb_strlen($password) < 8) {
             $mensaje_error = "La contraseña debe tener al menos 8 caracteres.";
+        } elseif (($id === 0 || $password !== '') && strlen($password) > 72) {
+            $mensaje_error = "La contraseña no puede exceder los 72 bytes.";
         } elseif ($id > 0 && $id === $id_sesion && $form['rol'] !== $usuario_actual['rol']) {
             $mensaje_error = "No puedes cambiar tu propio rol desde este panel.";
         } else {
@@ -276,6 +296,7 @@ $usuarios = $conexion->query(
                                         <a href="usuarios.php?editar=<?php echo (int) $u['id_usuario']; ?>" class="btn-link">Editar</a>
                                         <?php if (!$es_propio): ?>
                                             <form method="POST" onsubmit="return confirm('¿Eliminar a este usuario?');">
+                                                <?php echo campoCsrf(); ?>
                                                 <input type="hidden" name="accion" value="eliminar">
                                                 <input type="hidden" name="id_usuario" value="<?php echo (int) $u['id_usuario']; ?>">
                                                 <button type="submit" class="btn-link btn-danger">Eliminar</button>
@@ -306,12 +327,13 @@ $usuarios = $conexion->query(
             </p>
 
             <form method="POST">
+                <?php echo campoCsrf(); ?>
                 <input type="hidden" name="id_usuario" value="<?php echo (int) $form['id_usuario']; ?>">
 
                 <div class="form-group">
                     <label for="nombre">Nombre completo</label>
                     <input type="text" id="nombre" name="nombre" maxlength="100"
-                           title="Solo letras y puntos (sin números). Cada palabra debe iniciar con mayúscula y seguir en minúsculas."
+                           title="Letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil)."
                            value="<?php echo htmlspecialchars($form['nombre'], ENT_QUOTES, 'UTF-8'); ?>" required>
                 </div>
 

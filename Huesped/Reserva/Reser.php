@@ -53,7 +53,11 @@ function validarFechas(string $entrada, string $salida): string {
     return '';
 }
 
-/** Habitaciones libres por tipo en el rango dado: ['Sencilla' => 3, 'Doble' => 0, ...] */
+/**
+ * Habitaciones libres por tipo en el rango dado: ['Sencilla' => 3, 'Doble' => 0, ...]
+ * La disponibilidad por fecha depende de reservaciones Activas o En curso que se traslapen,
+ * excluyendo Mantenimiento y respetando h.disponible cuando la entrada consultada es hoy.
+ */
 function disponibilidad(PDO $conexion, string $entrada, string $salida): array {
     $solo_libres = ($entrada === date('Y-m-d')) ? " AND h.disponible = 1" : "";
     $stmt = $conexion->prepare(
@@ -63,7 +67,7 @@ function disponibilidad(PDO $conexion, string $entrada, string $salida): array {
          AND NOT EXISTS (
              SELECT 1 FROM reservacion r
              WHERE r.numero_habitacion = h.numero_habitacion
-               AND r.estado = 'Activa'
+               AND r.estado IN ('Activa', 'En curso')
                AND r.fecha_entrada < :salida
                AND r.fecha_salida  > :entrada
          )
@@ -73,7 +77,7 @@ function disponibilidad(PDO $conexion, string $entrada, string $salida): array {
     return $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 }
 
-$hoy_str      = date('Y-m-d');
+$hoy_str       = date('Y-m-d');
 $max_fecha_str = (new DateTime('today'))->modify('+' . MAX_DIAS_ANTICIPACION . ' days')->format('Y-m-d');
 
 // Fechas: se validan siempre en el servidor y se conserva lo escrito si hay error
@@ -95,82 +99,86 @@ $tarifas = $conexion->query(
 )->fetchAll(PDO::FETCH_UNIQUE);
 
 // RESERVAR
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $fechas_ok) {
-    $tipo  = $_POST['tipo_habitacion'] ?? '';
-    $notas = mb_substr(trim($_POST['notas'] ?? ''), 0, 255) ?: null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
+        $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
+    } elseif ($fechas_ok) {
+        $tipo  = $_POST['tipo_habitacion'] ?? '';
+        $notas = mb_substr(trim($_POST['notas'] ?? ''), 0, 255) ?: null;
 
-    if (!isset($tipos[$tipo], $tarifas[$tipo])) {
-        $mensaje_error = "Tipo de habitación no válido.";
-    } else {
-        try {
-            $conexion->beginTransaction();
+        if (!isset($tipos[$tipo], $tarifas[$tipo])) {
+            $mensaje_error = "Tipo de habitación no válido.";
+        } else {
+            try {
+                $conexion->beginTransaction();
 
-            // Se bloquean las habitaciones de ese tipo: si dos huéspedes reservan al mismo
-            // tiempo, el segundo espera y ya ve la reservación del primero (sin traslapes).
-            $conexion->prepare("SELECT numero_habitacion FROM habitacion WHERE tipo_habitacion = ? FOR UPDATE")
-                     ->execute([$tipo]);
+                // Se bloquean las habitaciones de ese tipo: si dos huéspedes reservan al mismo
+                // tiempo, el segundo espera y ya ve la reservación del primero (sin traslapes).
+                $conexion->prepare("SELECT numero_habitacion FROM habitacion WHERE tipo_habitacion = ? FOR UPDATE")
+                         ->execute([$tipo]);
 
-            // Primera habitación del tipo sin reservaciones activas que se traslapen
-            $solo_libres = ($entrada === date('Y-m-d')) ? " AND h.disponible = 1" : "";
-            $stmt = $conexion->prepare(
-                "SELECT h.numero_habitacion
-                  FROM habitacion h
-                  WHERE h.tipo_habitacion = :tipo
-                  AND h.estado_limpieza <> 'Mantenimiento'{$solo_libres}
-                    AND NOT EXISTS (
-                       SELECT 1 FROM reservacion r
-                       WHERE r.numero_habitacion = h.numero_habitacion
-                         AND r.estado = 'Activa'
-                         AND r.fecha_entrada < :salida
-                         AND r.fecha_salida  > :entrada
-                   )
-                 ORDER BY h.numero_habitacion
-                 LIMIT 1"
-            );
-            $stmt->execute(['tipo' => $tipo, 'entrada' => $entrada, 'salida' => $salida]);
-            $numero_hab = $stmt->fetchColumn();
+                // Primera habitación del tipo sin reservaciones activas o en curso que se traslapen
+                $solo_libres = ($entrada === date('Y-m-d')) ? " AND h.disponible = 1" : "";
+                $stmt = $conexion->prepare(
+                    "SELECT h.numero_habitacion
+                      FROM habitacion h
+                      WHERE h.tipo_habitacion = :tipo
+                      AND h.estado_limpieza <> 'Mantenimiento'{$solo_libres}
+                        AND NOT EXISTS (
+                           SELECT 1 FROM reservacion r
+                           WHERE r.numero_habitacion = h.numero_habitacion
+                             AND r.estado IN ('Activa', 'En curso')
+                             AND r.fecha_entrada < :salida
+                             AND r.fecha_salida  > :entrada
+                       )
+                     ORDER BY h.numero_habitacion
+                     LIMIT 1"
+                );
+                $stmt->execute(['tipo' => $tipo, 'entrada' => $entrada, 'salida' => $salida]);
+                $numero_hab = $stmt->fetchColumn();
 
-            $id_politica = $conexion->query(
-                "SELECT id_politica FROM politica_cancelacion WHERE vigente = 1 LIMIT 1"
-            )->fetchColumn();
+                $id_politica = $conexion->query(
+                    "SELECT id_politica FROM politica_cancelacion WHERE vigente = 1 LIMIT 1"
+                )->fetchColumn();
 
-            if (!$numero_hab) {
-                $mensaje_error = "Ya no hay habitaciones " . strtolower($tipo) . " disponibles en esas fechas.";
-            } elseif (!$id_politica) {
-                $mensaje_error = "No se puede reservar por el momento: no hay una política de cancelación vigente.";
-            } else {
-                // Código de confirmación de 5 caracteres que no exista todavía
-                $alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-                $existe   = $conexion->prepare("SELECT 1 FROM reservacion WHERE numero_confirmacion = ?");
-                do {
-                    $codigo = '';
-                    for ($i = 0; $i < 5; $i++) {
-                        $codigo .= $alfabeto[random_int(0, strlen($alfabeto) - 1)];
-                    }
-                    $existe->execute([$codigo]);
-                } while ($existe->fetchColumn());
+                if (!$numero_hab) {
+                    $mensaje_error = "Ya no hay habitaciones " . strtolower($tipo) . " disponibles en esas fechas.";
+                } elseif (!$id_politica) {
+                    $mensaje_error = "No se puede reservar por el momento: no hay una política de cancelación vigente.";
+                } else {
+                    // Código de confirmación de 5 caracteres que no exista todavía
+                    $alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+                    $existe   = $conexion->prepare("SELECT 1 FROM reservacion WHERE numero_confirmacion = ?");
+                    do {
+                        $codigo = '';
+                        for ($i = 0; $i < 5; $i++) {
+                            $codigo .= $alfabeto[random_int(0, strlen($alfabeto) - 1)];
+                        }
+                        $existe->execute([$codigo]);
+                    } while ($existe->fetchColumn());
 
-                $conexion->prepare(
-                    "INSERT INTO reservacion
-                        (numero_confirmacion, fecha_entrada, fecha_salida, estado, notas, canal,
-                         id_huesped, id_recepcionista, numero_habitacion, id_tarifa, id_politica)
-                     VALUES (?, ?, ?, 'Activa', ?, 'En línea', ?, NULL, ?, ?, ?)"
-                )->execute([
-                    $codigo, $entrada, $salida, $notas,
-                    $id_huesped, $numero_hab, $tarifas[$tipo]['id_tarifa'], $id_politica,
-                ]);
+                    $conexion->prepare(
+                        "INSERT INTO reservacion
+                            (numero_confirmacion, fecha_entrada, fecha_salida, estado, notas, canal,
+                             id_huesped, id_recepcionista, numero_habitacion, id_tarifa, id_politica)
+                         VALUES (?, ?, ?, 'Activa', ?, 'En línea', ?, NULL, ?, ?, ?)"
+                    )->execute([
+                        $codigo, $entrada, $salida, $notas,
+                        $id_huesped, $numero_hab, $tarifas[$tipo]['id_tarifa'], $id_politica,
+                    ]);
 
-                $conexion->commit();
-                header("Location: Reser.php?ok=" . urlencode($codigo));
-                exit;
+                    $conexion->commit();
+                    header("Location: Reser.php?ok=" . urlencode($codigo));
+                    exit;
+                }
+            } catch (PDOException $e) {
+                error_log('Reservar - crear: ' . $e->getMessage());
+                $mensaje_error = "No se pudo completar la reservación.";
             }
-        } catch (PDOException $e) {
-            error_log('Reservar - crear: ' . $e->getMessage());
-            $mensaje_error = "No se pudo completar la reservación.";
-        }
 
-        if ($conexion->inTransaction()) {
-            $conexion->rollBack();
+            if ($conexion->inTransaction()) {
+                $conexion->rollBack();
+            }
         }
     }
 }
@@ -235,6 +243,7 @@ if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
       <a href="Reser.php" class="active">Reservar</a>
+      <a href="../MisReservas/misreservas.php">Mis reservaciones</a>
       <a href="../Pagar/pagar.php">Pagar</a>
       <a href="../Cancelar/Cance.php">Cancelar reservación</a>
     </nav>
@@ -299,6 +308,7 @@ if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
 
         <div class="rooms-list">
           <form method="POST" id="formReserva">
+            <?php echo campoCsrf(); ?>
             <input type="hidden" name="entrada" value="<?php echo htmlspecialchars($entrada, ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" name="salida" value="<?php echo htmlspecialchars($salida, ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" name="tipo_habitacion" id="inputTipoHabitacion" value="<?php echo htmlspecialchars((string) $tipo_inicial, ENT_QUOTES, 'UTF-8'); ?>">
@@ -372,6 +382,7 @@ if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
     const precios = <?php echo json_encode($precios); ?>;
     const noches  = <?php echo (int) $noches; ?>;
     const maxFecha = <?php echo json_encode($max_fecha_str); ?>;
+    const maxNoches = <?php echo MAX_NOCHES_ESTANCIA; ?>;
 
     const inputEntrada = document.getElementById('entrada');
     const inputSalida  = document.getElementById('salida');
@@ -384,23 +395,30 @@ if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
       return d.toISOString().slice(0, 10);
     }
 
-    function actualizarMinSalida() {
+    function actualizarRangoSalida() {
       if (!inputEntrada || !inputSalida || !inputEntrada.value) return;
       const minSal = sumarDiasISO(inputEntrada.value, 1);
+      const maxPorEstancia = sumarDiasISO(inputEntrada.value, maxNoches);
       if (!minSal) return;
 
       inputSalida.min = minSal;
-      if (inputSalida.max && inputSalida.min > inputSalida.max) {
+      const maxEfectivo = (maxPorEstancia && maxPorEstancia < maxFecha) ? maxPorEstancia : maxFecha;
+      inputSalida.max = maxEfectivo;
+
+      if (inputSalida.min > inputSalida.max) {
         inputSalida.min = inputSalida.max;
       }
       if (inputSalida.value && inputSalida.value < inputSalida.min) {
         inputSalida.value = inputSalida.min;
       }
+      if (inputSalida.value && inputSalida.value > inputSalida.max) {
+        inputSalida.value = inputSalida.max;
+      }
     }
 
     if (inputEntrada && inputSalida) {
-      actualizarMinSalida();
-      inputEntrada.addEventListener('change', actualizarMinSalida);
+      actualizarRangoSalida();
+      inputEntrada.addEventListener('change', actualizarRangoSalida);
     }
 
     function seleccionarHabitacion(tipo, card) {
