@@ -220,7 +220,18 @@ try {
 
                 <div class="form-group">
                     <label for="roomPrice">Precio por noche</label>
-                    <input type="text" id="roomPrice" name="precio" inputmode="decimal" pattern="^\d+(?:\.\d{1,2})?$" value="<?php echo htmlspecialchars($form['precio'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="$ 0.00" required>
+                    <input
+                        type="number"
+                        id="roomPrice"
+                        name="precio"
+                        step="0.01"
+                        min="0.01"
+                        max="999999.99"
+                        inputmode="decimal"
+                        value="<?php echo htmlspecialchars($form['precio'], ENT_QUOTES, 'UTF-8'); ?>"
+                        placeholder="0.00"
+                        required
+                    >
                 </div>
 
                 <div class="form-group">
@@ -237,6 +248,46 @@ try {
         </aside>
 
     </div>
+
+    <script>
+        (function () {
+            const priceInput = document.getElementById('roomPrice');
+            if (!priceInput) return;
+
+            // Bloquea teclas como 'e', 'E', '+', '-' en campos numéricos
+            priceInput.addEventListener('keydown', function (e) {
+                if (['e', 'E', '+', '-'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
+
+            // Sanitiza entrada en tiempo real (solo dígitos, un punto decimal y máx. 2 decimales)
+            priceInput.addEventListener('input', function () {
+                let val = this.value;
+
+                // Reemplaza coma por punto si el usuario escribe coma decimal
+                val = val.replace(/,/g, '.');
+
+                // Conserva solo dígitos y puntos
+                val = val.replace(/[^0-9.]/g, '');
+
+                // Permite solo el primer punto decimal
+                const parts = val.split('.');
+                if (parts.length > 2) {
+                    val = parts[0] + '.' + parts.slice(1).join('');
+                }
+
+                // Limita a máximo 2 decimales
+                if (parts.length === 2 && parts[1].length > 2) {
+                    val = parts[0] + '.' + parts[1].slice(0, 2);
+                }
+
+                if (this.value !== val) {
+                    this.value = val;
+                }
+            });
+        })();
+    </script>
 
 </body>
 </html>
