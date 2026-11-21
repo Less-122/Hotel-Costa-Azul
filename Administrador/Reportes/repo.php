@@ -68,8 +68,9 @@ $etiqueta = ($periodo === 'rango')
 
 $rango = ['desde' => $desde->format('Y-m-d'), 'hasta' => $hasta->format('Y-m-d')];
 
-// Penalizaciones retenidas de pagos ya cobrados previamente: se muestran en Penalización
-// pero no se suman de nuevo en el total neto ni en canales para evitar duplicar ingresos.
+// Compatibilidad con datos antiguos: antes la penalización retenida se guardaba como una fila
+// extra Penalización/Retención que duplicaba el saldo. Ya no se inserta; si existen filas
+// viejas se ignoran en los totales para no contarlas dos veces.
 $es_retencion_previa = "(p.tipo_pago = 'Penalización' AND p.canal_pago = 'Retención')";
 
 // 1. Movimientos registrados en pago dentro del periodo (separando penalizaciones y devoluciones)
@@ -82,10 +83,6 @@ $st = $conexion->prepare("
                WHEN p.tipo_pago = 'Devolución' OR p.monto < 0 THEN p.monto
                ELSE 0
            END), 0) AS devoluciones,
-           COALESCE(SUM(CASE
-               WHEN p.tipo_pago = 'Penalización' THEN ABS(p.monto)
-               ELSE 0
-           END), 0) AS penalizacion,
            COALESCE(SUM(CASE
                WHEN p.tipo_pago = 'Anticipo' AND p.monto > 0 THEN p.monto
                ELSE 0
@@ -106,11 +103,27 @@ $pagos = $st->fetch(PDO::FETCH_ASSOC);
 
 $total_ingresos       = (float) $pagos['total'];
 $total_devoluciones   = (float) $pagos['devoluciones'];
-$ingreso_penalizacion = (float) $pagos['penalizacion'];
 $ingreso_anticipo     = (float) $pagos['anticipo'];
 $ingreso_liquidacion  = (float) $pagos['liquidacion'];
 $ingreso_en_linea     = (float) $pagos['en_linea'];
 $ingreso_terminal     = $total_ingresos - $ingreso_en_linea;
+
+// Penalización retenida: lo que queda neto en pago de las reservaciones canceladas en el periodo
+// (pagos menos devolución). Ya está incluida en los ingresos; aquí solo se desglosa.
+$st = $conexion->prepare("
+    SELECT COALESCE(SUM(GREATEST(0, x.neto)), 0)
+    FROM (
+        SELECT r.id_reservacion,
+               SUM(CASE WHEN {$es_retencion_previa} THEN 0 ELSE p.monto END) AS neto
+        FROM reservacion r
+        JOIN pago p ON p.id_reservacion = r.id_reservacion
+        WHERE r.estado = 'Cancelada'
+          AND r.fecha_modificacion >= :desde AND r.fecha_modificacion < :hasta
+        GROUP BY r.id_reservacion
+    ) x
+");
+$st->execute($rango);
+$ingreso_penalizacion = (float) $st->fetchColumn();
 
 // 2. Reservaciones registradas en el periodo, por estado
 $st = $conexion->prepare("
@@ -333,7 +346,7 @@ for ($i = 0; $i < $dias; $i += 7) {
                     <strong class="<?php echo $ingreso_liquidacion < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_liquidacion); ?></strong>
                 </div>
                 <div class="summary-box">
-                    <span>Penalización</span>
+                    <span>Penalización retenida</span>
                     <strong class="<?php echo $ingreso_penalizacion < 0 ? 'monto-negativo' : ''; ?>"><?php echo formatoMoneda($ingreso_penalizacion); ?></strong>
                 </div>
                 <div class="summary-box">
@@ -355,7 +368,7 @@ for ($i = 0; $i < $dias; $i += 7) {
             </div>
 
             <p class="disclaimer-text">
-                Los ingresos reflejan los movimientos registrados en el periodo (separando penalizaciones y devoluciones). La ocupación se calcula por noches reservadas dentro del periodo.
+                Los ingresos reflejan los pagos menos las devoluciones del periodo. La penalización retenida (primera noche de cancelaciones tardías y no-show) ya está incluida en ellos. La ocupación se calcula por noches reservadas dentro del periodo.
             </p>
         </aside>
 

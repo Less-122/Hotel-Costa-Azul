@@ -439,3 +439,23 @@ select {
 }
 
 .btn-cancel-row:hover { text-decoration: underline; }
+
+/* Agregar al final de recep.css (avisos y botón de no-show) */
+.note-noshow {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.note-overdue {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.row-form {
+  margin: 0;
+}
+
+.btn-row-small {
+  padding: 0;
+  font-size: 13px;
+}

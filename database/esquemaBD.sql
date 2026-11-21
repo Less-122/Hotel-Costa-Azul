@@ -20,6 +20,9 @@ SET time_zone = "+00:00";
 --
 -- Base de datos: `hotel_costa_azul`
 --
+DROP DATABASE hotel_costa_azul;
+CREATE DATABASE IF NOT EXISTS `hotel_costa_azul` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE `hotel_costa_azul`;
 
 -- --------------------------------------------------------
 
@@ -71,6 +74,8 @@ CREATE TABLE `pago` (
 CREATE TABLE `politica_cancelacion` (
   `id_politica` int(11) NOT NULL,
   `descripcion` text NOT NULL,
+  `horas_anticipacion` smallint(5) UNSIGNED NOT NULL DEFAULT 72,
+  `cobra_primera_noche` tinyint(1) NOT NULL DEFAULT 1,
   `vigente` tinyint(1) NOT NULL DEFAULT 1,
   `fecha_inicio` date NOT NULL,
   `fecha_fin` date DEFAULT NULL
@@ -80,9 +85,9 @@ CREATE TABLE `politica_cancelacion` (
 -- Volcado de datos para la tabla `politica_cancelacion`
 --
 
-INSERT INTO `politica_cancelacion` (`id_politica`, `descripcion`, `vigente`, `fecha_inicio`, `fecha_fin`) VALUES
-(1, 'Cancelacion gratuita hasta 48 horas antes de la fecha de entrada.', 0, '2026-01-01', '2026-09-30'),
-(2, 'Cancelacion gratuita hasta 72 horas antes; despues se cobra la primera noche.', 1, '2026-10-01', NULL);
+INSERT INTO `politica_cancelacion` (`id_politica`, `descripcion`, `horas_anticipacion`, `cobra_primera_noche`, `vigente`, `fecha_inicio`, `fecha_fin`) VALUES
+(1, 'Cancelacion gratuita hasta 48 horas antes de la fecha de entrada.', 48, 0, 0, '2026-01-01', '2026-09-30'),
+(2, 'Cancelacion gratuita hasta 72 horas antes; despues se cobra la primera noche.', 72, 1, 1, '2026-10-01', NULL);
 
 -- --------------------------------------------------------
 
@@ -228,7 +233,7 @@ ALTER TABLE `usuario`
 -- AUTO_INCREMENT de la tabla `pago`
 --
 ALTER TABLE `pago`
-  MODIFY `id_pago` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id_pago` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT de la tabla `politica_cancelacion`
@@ -275,6 +280,52 @@ ALTER TABLE `reservacion`
   ADD CONSTRAINT `fk_res_recep` FOREIGN KEY (`id_recepcionista`) REFERENCES `usuario` (`id_usuario`),
   ADD CONSTRAINT `fk_res_tarifa` FOREIGN KEY (`id_tarifa`) REFERENCES `tarifa` (`id_tarifa`),
   ADD CONSTRAINT `fk_reservacion_modificado_por` FOREIGN KEY (`modificado_por`) REFERENCES `usuario` (`id_usuario`);
+
+-- --------------------------------------------------------
+-- Correcciones de reglas de negocio (restricciones, índices y datos de prueba)
+-- --------------------------------------------------------
+
+-- Pago de ejemplo: anticipo en recepción de la reservación DTWYR (Sencilla, 1 noche = $850; saldo $450)
+INSERT INTO `pago` (`id_pago`, `monto`, `fecha_hora`, `tipo_pago`, `canal_pago`, `id_reservacion`, `id_recepcionista`) VALUES
+(1, 400.00, '2026-11-12 23:25:00', 'Anticipo', 'Recepción', 2, 3);
+
+-- Valores permitidos (los mismos que escribe el código PHP)
+ALTER TABLE `habitacion`
+  ADD CONSTRAINT `ck_hab_limpieza` CHECK (`estado_limpieza` IN ('Limpia','Sucia','Mantenimiento')),
+  ADD CONSTRAINT `ck_hab_disponible` CHECK (`disponible` IN (0,1));
+
+ALTER TABLE `usuario`
+  ADD CONSTRAINT `ck_usuario_rol` CHECK (`rol` IN ('Admin','Recepcionista','Camarista','Huesped'));
+
+ALTER TABLE `tarifa`
+  ADD CONSTRAINT `ck_tarifa_precio` CHECK (`precio_noche` > 0),
+  ADD CONSTRAINT `ck_tarifa_fechas` CHECK (`fecha_fin` IS NULL OR `fecha_fin` >= `fecha_inicio`);
+
+ALTER TABLE `politica_cancelacion`
+  ADD CONSTRAINT `ck_pol_horas` CHECK (`horas_anticipacion` <= 720),
+  ADD CONSTRAINT `ck_pol_fechas` CHECK (`fecha_fin` IS NULL OR `fecha_fin` >= `fecha_inicio`);
+
+ALTER TABLE `reservacion`
+  ADD CONSTRAINT `ck_res_estado` CHECK (`estado` IN ('Activa','En curso','Finalizada','Cancelada')),
+  ADD CONSTRAINT `ck_res_canal` CHECK (`canal` IN ('En línea','Recepción')),
+  ADD CONSTRAINT `ck_res_fechas` CHECK (`fecha_salida` > `fecha_entrada`),
+  ADD KEY `idx_res_disponibilidad` (`numero_habitacion`,`estado`,`fecha_entrada`,`fecha_salida`),
+  ADD KEY `idx_res_estado_entrada` (`estado`,`fecha_entrada`);
+
+-- Libro de pagos: Anticipo/Liquidación/Penalización suman (> 0); Devolución resta (< 0)
+ALTER TABLE `pago`
+  ADD CONSTRAINT `ck_pago_tipo` CHECK (`tipo_pago` IN ('Anticipo','Liquidación','Penalización','Devolución')),
+  ADD CONSTRAINT `ck_pago_canal` CHECK (`canal_pago` IN ('Pasarela en línea','Recepción','Sistema','Retención')),
+  ADD CONSTRAINT `ck_pago_signo` CHECK ((`tipo_pago` = 'Devolución' AND `monto` < 0) OR (`tipo_pago` <> 'Devolución' AND `monto` > 0)),
+  ADD KEY `idx_pago_fecha` (`fecha_hora`);
+-- Una sola tarifa vigente por tipo de habitación y una sola política vigente (lo impone la BD)
+ALTER TABLE `tarifa`
+  ADD COLUMN `vigente_unico` tinyint(1) AS (IF(`vigente` = 1, 1, NULL)) PERSISTENT,
+  ADD UNIQUE INDEX `uq_tarifa_vigente` (`tipo_habitacion`, `vigente_unico`);
+
+ALTER TABLE `politica_cancelacion`
+  ADD COLUMN `vigente_unico` tinyint(1) AS (IF(`vigente` = 1, 1, NULL)) PERSISTENT,
+  ADD UNIQUE INDEX `uq_politica_vigente` (`vigente_unico`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

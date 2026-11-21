@@ -1,17 +1,12 @@
 <?php
 require_once '../../config/conexion.php';
 require_once '../../config/sesion.php';
+require_once '../../config/reservaciones.php';
 
 verificarAcceso('huesped');
 
 $id_huesped = (int) $_SESSION['id_usuario'];
 $codigo     = strtoupper(trim($_REQUEST['codigo'] ?? ''));
-
-function fecha(string $f): string {
-    $meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-    $t = strtotime($f);
-    return date('d', $t) . ' ' . $meses[date('n', $t) - 1] . ' ' . date('Y', $t);
-}
 
 /** Valida un número de tarjeta usando el algoritmo de Luhn. */
 function validarLuhn(string $digitos): bool {
@@ -72,8 +67,12 @@ function buscarReservacion(PDO $conexion, string $codigo, int $id_huesped, bool 
     if (!$r) {
         return null;
     }
-    $r['costo'] = max(1, (int) $r['noches']) * $r['precio_noche'];
-    $r['saldo'] = max(0, round($r['costo'] - $r['pagado'], 2));
+    $r['costo']  = costoEstancia((float) $r['precio_noche'], $r['fecha_entrada'], $r['fecha_salida']);
+    $r['pagado'] = round((float) $r['pagado'], 2);
+    // Solo las reservaciones abiertas tienen saldo por pagar
+    $r['saldo']  = in_array($r['estado'], ESTADOS_ABIERTOS, true)
+        ? max(0.0, round($r['costo'] - $r['pagado'], 2))
+        : 0.0;
     return $r;
 }
 
@@ -87,7 +86,7 @@ $card_form = [
     'cvv'            => '',
 ];
 
-// PAGAR (solo reservaciones en estado 'Activa'; recepción también admite 'En curso')
+// PAGAR (reservaciones 'Activa' o 'En curso', igual que en recepción)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
         $mensaje_error = "Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.";
@@ -122,8 +121,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if (!$r) {
                     $mensaje_error = "La reservación no existe o no pertenece a tu cuenta.";
-                } elseif ($r['estado'] !== 'Activa') {
-                    $mensaje_error = "El pago en línea solo está disponible para reservaciones en estado Activa (estado actual: "
+                } elseif (!in_array($r['estado'], ['Activa', 'En curso'], true)) {
+                    $mensaje_error = "El pago en línea solo está disponible para reservaciones Activas o En curso (estado actual: "
                                    . $r['estado'] . ").";
                 } elseif ($monto <= 0 || $monto > $r['saldo']) {
                     $mensaje_error = "El monto debe ser mayor a 0 y no superar tu saldo pendiente ($"
@@ -154,7 +153,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // BUSCAR (solo entre las reservaciones del huésped en sesión)
 $reservacion = ($codigo !== '') ? buscarReservacion($conexion, $codigo, $id_huesped) : null;
-$puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservacion['saldo'] > 0;
+$puede_pagar = $reservacion
+    && in_array($reservacion['estado'], ESTADOS_ABIERTOS, true)
+    && $reservacion['saldo'] > 0;
+$mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_huesped) : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -162,56 +164,18 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hotel Costa Azul - Pagar mi reservación</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="pagar.css">
-  <style>
-    .navbar .nav-user {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: #fff;
-    }
-    .navbar .user-avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.15);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-    }
-    .navbar .user-info {
-      display: flex;
-      flex-direction: column;
-      line-height: 1.2;
-      font-size: 12px;
-    }
-    .navbar .user-info strong {
-      font-size: 13px;
-      font-weight: 600;
-    }
-    .navbar .user-info span {
-      opacity: 0.8;
-    }
-    .navbar .btn-home {
-      color: #fff;
-      text-decoration: none;
-      margin-left: 8px;
-      font-size: 16px;
-      display: inline-flex;
-      align-items: center;
-    }
-    .navbar .btn-home:hover {
-      opacity: 0.8;
-    }
-  </style>
 </head>
 <body>
   <header class="navbar">
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
       <a href="../Reserva/Reser.php">Reservar</a>
+      <a href="../MisReservas/misreservas.php">Mis reservaciones</a>
       <a href="pagar.php" class="active">Pagar</a>
       <a href="../Cancelar/Cance.php">Cancelar reservación</a>
     </nav>
@@ -230,13 +194,13 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
   <main class="main-container">
     <section class="left-section">
       <h1>Pagar mi reservación</h1>
-      <p class="subtitle">Abona un anticipo o liquida tu saldo en línea (solo reservaciones activas).</p>
+      <p class="subtitle">Abona un anticipo o liquida tu saldo en línea (reservaciones activas o en curso).</p>
 
       <?php if ($mensaje_exito): ?>
-          <div class="alert alert-success" style="color: #3c763d; background: #dff0d8; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo htmlspecialchars($mensaje_exito, ENT_QUOTES, 'UTF-8'); ?></div>
+          <div class="alert alert-success"><?php echo htmlspecialchars($mensaje_exito, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
       <?php if ($mensaje_error): ?>
-          <div class="alert alert-danger" style="color: #a94442; background: #f2dede; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: 500;"><?php echo htmlspecialchars($mensaje_error, ENT_QUOTES, 'UTF-8'); ?></div>
+          <div class="alert alert-danger"><?php echo htmlspecialchars($mensaje_error, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php endif; ?>
 
       <form method="GET" class="search-form">
@@ -250,11 +214,27 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
         <button type="submit" class="btn-search"><i class="fa-solid fa-magnifying-glass"></i> Buscar</button>
       </form>
 
+      <?php if ($codigo === '' && $mis_reservaciones): ?>
+        <div class="quick-list">
+          <p class="quick-list-title">¿No recuerdas tu código? Elige una de tus reservaciones con saldo:</p>
+          <?php $hay_saldo = false; foreach ($mis_reservaciones as $mr): ?>
+            <?php if ($mr['saldo'] <= 0) { continue; } $hay_saldo = true; ?>
+            <a class="quick-item" href="pagar.php?codigo=<?php echo urlencode($mr['numero_confirmacion']); ?>">
+              <span><b><?php echo htmlspecialchars($mr['numero_confirmacion'], ENT_QUOTES, 'UTF-8'); ?></b> · <?php echo fecha($mr['fecha_entrada'], true); ?></span>
+              <span>Saldo $<?php echo number_format($mr['saldo'], 2); ?></span>
+            </a>
+          <?php endforeach; ?>
+          <?php if (!$hay_saldo): ?>
+            <p class="quick-empty">No tienes reservaciones con saldo pendiente.</p>
+          <?php endif; ?>
+        </div>
+      <?php endif; ?>
+
       <?php if ($reservacion): ?>
         <div class="reservation-summary-card">
           <div class="res-guest-name"><?php echo htmlspecialchars($_SESSION['nombre'], ENT_QUOTES, 'UTF-8'); ?></div>
           <div class="res-info-details">
-              <?php echo fecha($reservacion['fecha_entrada']); ?> → <?php echo fecha($reservacion['fecha_salida']); ?>
+              <?php echo fecha($reservacion['fecha_entrada'], true); ?> → <?php echo fecha($reservacion['fecha_salida'], true); ?>
               · Hab. <?php echo htmlspecialchars($reservacion['numero_habitacion'], ENT_QUOTES, 'UTF-8'); ?>
               (<?php echo htmlspecialchars($reservacion['tipo_habitacion'], ENT_QUOTES, 'UTF-8'); ?>)
               · Estado: <b><?php echo htmlspecialchars($reservacion['estado'], ENT_QUOTES, 'UTF-8'); ?></b>
@@ -270,7 +250,7 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
           </div>
         </div>
       <?php elseif ($codigo !== ''): ?>
-        <p style="text-align: center; color: #666; padding: 15px;">No se encontró ninguna reservación tuya con ese código.</p>
+        <p class="not-found">No se encontró ninguna reservación tuya con ese código.</p>
       <?php endif; ?>
     </section>
 
@@ -301,7 +281,7 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
                 <div class="input-field"><input type="password" id="cardCvv" name="cvv" inputmode="numeric" maxlength="4" pattern="[0-9]{3,4}" value="<?php echo htmlspecialchars($card_form['cvv'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="•••" required></div>
               </div>
             </div>
-            <div class="input-group" style="margin-top: 15px;">
+            <div class="input-group input-group-spaced">
               <label for="amountInput">Monto a abonar</label>
               <div class="input-field">
                 <input type="number" id="amountInput" name="monto" step="0.01" min="0.01"
@@ -310,15 +290,15 @@ $puede_pagar = $reservacion && $reservacion['estado'] === 'Activa' && $reservaci
             </div>
             <button type="submit" class="btn-pay-submit"><i class="fa-solid fa-lock"></i> Pagar</button>
           </form>
-        <?php elseif ($reservacion && $reservacion['estado'] !== 'Activa'): ?>
+        <?php elseif ($reservacion && !in_array($reservacion['estado'], ESTADOS_ABIERTOS, true)): ?>
           <h2>Pago en línea no disponible</h2>
-          <p style="color: #666;">Esta reservación está <b><?php echo htmlspecialchars($reservacion['estado'], ENT_QUOTES, 'UTF-8'); ?></b>. El pago en línea solo acepta reservaciones en estado <b>Activa</b> (si ya está <em>En curso</em>, el pago debe registrarse en recepción).</p>
+          <p class="info-text">Esta reservación está <b><?php echo htmlspecialchars($reservacion['estado'], ENT_QUOTES, 'UTF-8'); ?></b>. El pago en línea solo acepta reservaciones <b>Activas</b> o <b>En curso</b>.</p>
         <?php elseif ($reservacion): ?>
           <h2>Reservación liquidada</h2>
-          <p style="color: #666;">No tienes saldo pendiente.</p>
+          <p class="info-text">No tienes saldo pendiente.</p>
         <?php else: ?>
           <h2>Datos de la tarjeta</h2>
-          <p style="color: #666;">Busca tu reservación para poder pagar.</p>
+          <p class="info-text">Busca tu reservación para poder pagar.</p>
         <?php endif; ?>
       </div>
     </aside>

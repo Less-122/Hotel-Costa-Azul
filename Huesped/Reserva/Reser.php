@@ -243,6 +243,7 @@ if ($dt_ent_check && $dt_ent_check->format('Y-m-d') === $entrada) {
     <div class="nav-brand">Hotel Costa Azul</div>
     <nav class="nav-links">
       <a href="Reser.php" class="active">Reservar</a>
+      <a href="../MisReservas/misreservas.php">Mis reservaciones</a>
       <a href="../Pagar/pagar.php">Pagar</a>
       <a href="../Cancelar/Cance.php">Cancelar reservación</a>
     </nav>
