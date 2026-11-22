@@ -43,6 +43,7 @@ function validarFechas(string $entrada, string $salida): string {
 }
 
 /**
+<<<<<<< HEAD
 - Valida nombres permitiendo únicamente letras (incluyendo acentos y ñ),
 - apóstrofes (' o ’) y espacios simples entre palabras (sin números ni espacios extra).
  */
@@ -51,10 +52,18 @@ function validarNombreFormato(string $nombre): bool {
         return false;
     }
 
+=======
+- Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
+- abreviaturas con punto (ej. Ma., J.), partículas en minúscula (de, del, la, etc.),
+- guiones (García-López) y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
+ */
+function validarNombreFormato(string $nombre): bool {
+>>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
         return false;
     }
 
+<<<<<<< HEAD
     $normalizada = str_replace('’', "'", $nombre);
 
     return preg_match('/^[\p{L}\']+(?: [\p{L}\']+)*$/u', $normalizada) === 1
@@ -78,6 +87,30 @@ function validarCorreoFormato(string $correo): bool {
     }
 
     return preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u', $correo) === 1;
+=======
+    $particulasMinuscula = ['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'dos', 'van', 'von'];
+    $palabras = explode(' ', $nombre);
+
+    foreach ($palabras as $palabra) {
+        $palabraMinuscula = mb_strtolower($palabra, 'UTF-8');
+        if (in_array($palabraMinuscula, $particulasMinuscula, true)) {
+            if ($palabra !== $palabraMinuscula) {
+                return false;
+            }
+            continue;
+        }
+
+        $normalizada = str_replace('’', "'", $palabra);
+        $patronSegmento = '(?:\p{Lu}\.|\p{Lu}\p{Ll}+\.?)';
+        $patronPalabra  = '/^' . $patronSegmento . "(?:[-']" . $patronSegmento . ')*$/u';
+
+        if (!preg_match($patronPalabra, $normalizada)) {
+            return false;
+        }
+    }
+
+    return true;
+>>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
 }
 
 $id_usuario    = (int) $_SESSION['id_usuario'];
@@ -364,11 +397,19 @@ if ($accion === 'nueva_reservacion') {
     } elseif (mb_strlen($form['nombre_huesped'], 'UTF-8') > 100) {
         $mensaje_error = "El nombre es demasiado largo (máximo 100 caracteres).";
     } elseif (!validarNombreFormato($form['nombre_huesped'])) {
+<<<<<<< HEAD
         $mensaje_error = "El nombre solo puede contener letras, acentos y apóstrofes (ej. María López, O'Neil).";
     } elseif (!preg_match('/^\d{10}$/', $form['telefono'])) {
         $mensaje_error = "El teléfono debe contener exactamente 10 dígitos numéricos y sin espacios.";
     } elseif ($form['correo'] !== '' && !validarCorreoFormato($form['correo'])) {
         $mensaje_error = "El correo electrónico no es válido o contiene espacios (máximo 80 caracteres).";
+=======
+        $mensaje_error = "El nombre solo puede contener letras, puntos, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).";
+    } elseif (!preg_match('/^\d{10}$/', $form['telefono'])) {
+        $mensaje_error = "El teléfono debe tener 10 dígitos.";
+    } elseif ($form['correo'] !== '' && (!filter_var($form['correo'], FILTER_VALIDATE_EMAIL) || strlen($form['correo']) > 80)) {
+        $mensaje_error = "El correo electrónico no es válido.";
+>>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
     } elseif ($error_fechas !== '') {
         $mensaje_error = $error_fechas;
     } elseif (!in_array($form['tipo_habitacion'], $tipos_habitacion, true)) {
@@ -762,14 +803,24 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
           <span class="channel-badge">Canal: Recepción</span>
         </div>
 
+<<<<<<< HEAD
         <form id="newReservationForm" method="POST" novalidate>
+=======
+        <form id="newReservationForm" method="POST">
+>>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
           <?php echo campoCsrf(); ?>
           <input type="hidden" name="accion" value="nueva_reservacion">
 
           <div class="input-group">
+<<<<<<< HEAD
             <label for="resNombreHuesped">Nombre del huésped</label>
             <input type="text" id="resNombreHuesped" name="nombre_huesped" maxlength="100"
                    title="Solo letras, acentos y apóstrofes (ej. María López, O'Neil)."
+=======
+            <label>Nombre del huésped</label>
+            <input type="text" name="nombre_huesped" maxlength="100"
+                   title="Letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil)."
+>>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
                    value="<?php echo htmlspecialchars($form['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Nombre completo" required>
           </div>
 
@@ -861,6 +912,7 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
       };
     })();
 
+<<<<<<< HEAD
     // Validación en tiempo real y envío para el formulario de Nueva reservación
     (() => {
       const nombreInput   = document.getElementById('resNombreHuesped');
@@ -938,6 +990,8 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
       }
     })();
 
+=======
+>>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
     function sumarDiasISO(fechaISO, dias) {
       const partes = fechaISO.split('-');
       if (partes.length !== 3) return null;
