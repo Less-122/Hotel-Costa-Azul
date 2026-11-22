@@ -43,37 +43,41 @@ function validarFechas(string $entrada, string $salida): string {
 }
 
 /**
-- Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
-- abreviaturas con punto (ej. Ma., J.), partículas en minúscula (de, del, la, etc.),
-- guiones (García-López) y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
+- Valida nombres permitiendo únicamente letras (incluyendo acentos y ñ),
+- apóstrofes (' o ’) y espacios simples entre palabras (sin números ni espacios extra).
  */
 function validarNombreFormato(string $nombre): bool {
+    if ($nombre === '') {
+        return false;
+    }
+
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
         return false;
     }
 
-    $particulasMinuscula = ['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'dos', 'van', 'von'];
-    $palabras = explode(' ', $nombre);
+    $normalizada = str_replace('’', "'", $nombre);
 
-    foreach ($palabras as $palabra) {
-        $palabraMinuscula = mb_strtolower($palabra, 'UTF-8');
-        if (in_array($palabraMinuscula, $particulasMinuscula, true)) {
-            if ($palabra !== $palabraMinuscula) {
-                return false;
-            }
-            continue;
-        }
+    return preg_match('/^[\p{L}\']+(?: [\p{L}\']+)*$/u', $normalizada) === 1
+        && preg_match('/(?:^| )\'|\'(?: |$)/u', $normalizada) !== 1;
+}
 
-        $normalizada = str_replace('’', "'", $palabra);
-        $patronSegmento = '(?:\p{Lu}\.|\p{Lu}\p{Ll}+\.?)';
-        $patronPalabra  = '/^' . $patronSegmento . "(?:[-']" . $patronSegmento . ')*$/u';
-
-        if (!preg_match($patronPalabra, $normalizada)) {
-            return false;
-        }
+/**
+ * Valida formato de correo electrónico estándar y sin espacios.
+ */
+function validarCorreoFormato(string $correo): bool {
+    if ($correo === '' || preg_match('/\s/u', $correo)) {
+        return false;
     }
 
-    return true;
+    if (mb_strlen($correo, 'UTF-8') > 80) {
+        return false;
+    }
+
+    if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    return preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u', $correo) === 1;
 }
 
 $id_usuario    = (int) $_SESSION['id_usuario'];
@@ -357,14 +361,14 @@ if ($accion === 'nueva_reservacion') {
 
     if ($form['nombre_huesped'] === '' || $form['telefono'] === '' || $form['fecha_entrada'] === '' || $form['fecha_salida'] === '') {
         $mensaje_error = "Por favor completa todos los campos obligatorios.";
-    } elseif (mb_strlen($form['nombre_huesped']) > 100) {
+    } elseif (mb_strlen($form['nombre_huesped'], 'UTF-8') > 100) {
         $mensaje_error = "El nombre es demasiado largo (máximo 100 caracteres).";
     } elseif (!validarNombreFormato($form['nombre_huesped'])) {
-        $mensaje_error = "El nombre solo puede contener letras, puntos, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).";
+        $mensaje_error = "El nombre solo puede contener letras, acentos y apóstrofes (ej. María López, O'Neil).";
     } elseif (!preg_match('/^\d{10}$/', $form['telefono'])) {
-        $mensaje_error = "El teléfono debe tener 10 dígitos.";
-    } elseif ($form['correo'] !== '' && (!filter_var($form['correo'], FILTER_VALIDATE_EMAIL) || strlen($form['correo']) > 80)) {
-        $mensaje_error = "El correo electrónico no es válido.";
+        $mensaje_error = "El teléfono debe contener exactamente 10 dígitos numéricos y sin espacios.";
+    } elseif ($form['correo'] !== '' && !validarCorreoFormato($form['correo'])) {
+        $mensaje_error = "El correo electrónico no es válido o contiene espacios (máximo 80 caracteres).";
     } elseif ($error_fechas !== '') {
         $mensaje_error = $error_fechas;
     } elseif (!in_array($form['tipo_habitacion'], $tipos_habitacion, true)) {
@@ -758,25 +762,29 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
           <span class="channel-badge">Canal: Recepción</span>
         </div>
 
-        <form id="newReservationForm" method="POST">
+        <form id="newReservationForm" method="POST" novalidate>
           <?php echo campoCsrf(); ?>
           <input type="hidden" name="accion" value="nueva_reservacion">
 
           <div class="input-group">
-            <label>Nombre del huésped</label>
-            <input type="text" name="nombre_huesped" maxlength="100"
-                   title="Letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil)."
+            <label for="resNombreHuesped">Nombre del huésped</label>
+            <input type="text" id="resNombreHuesped" name="nombre_huesped" maxlength="100"
+                   title="Solo letras, acentos y apóstrofes (ej. María López, O'Neil)."
                    value="<?php echo htmlspecialchars($form['nombre_huesped'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Nombre completo" required>
           </div>
 
           <div class="input-group">
-            <label>Teléfono</label>
-            <input type="tel" name="telefono" placeholder="10 dígitos" pattern="[0-9]{10}" maxlength="10" value="<?php echo htmlspecialchars($form['telefono'], ENT_QUOTES, 'UTF-8'); ?>" required>
+            <label for="resTelefono">Teléfono</label>
+            <input type="tel" id="resTelefono" name="telefono" placeholder="10 dígitos" pattern="[0-9]{10}" maxlength="10" inputmode="numeric"
+                   title="10 dígitos numéricos sin espacios."
+                   value="<?php echo htmlspecialchars($form['telefono'], ENT_QUOTES, 'UTF-8'); ?>" required>
           </div>
 
           <div class="input-group">
-            <label>Correo (opcional)</label>
-            <input type="email" name="correo" maxlength="80" value="<?php echo htmlspecialchars($form['correo'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Si ya tiene cuenta, se usa esa">
+            <label for="resCorreo">Correo (opcional)</label>
+            <input type="email" id="resCorreo" name="correo" maxlength="80"
+                   title="Correo electrónico válido sin espacios."
+                   value="<?php echo htmlspecialchars($form['correo'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="Si ya tiene cuenta, se usa esa">
           </div>
 
           <div class="form-row">
@@ -851,6 +859,83 @@ if ($dt_form_ent && $dt_form_ent->format('Y-m-d') === $form['fecha_entrada']) {
         }
         return res;
       };
+    })();
+
+    // Validación en tiempo real y envío para el formulario de Nueva reservación
+    (() => {
+      const nombreInput   = document.getElementById('resNombreHuesped');
+      const telefonoInput = document.getElementById('resTelefono');
+      const correoInput   = document.getElementById('resCorreo');
+      const formRes       = document.getElementById('newReservationForm');
+
+      if (nombreInput) {
+        nombreInput.addEventListener('input', function () {
+          const limpio = this.value.replace(/[^\p{L}'’ ]/gu, '');
+          if (this.value !== limpio) {
+            this.value = limpio;
+          }
+        });
+      }
+
+      if (telefonoInput) {
+        telefonoInput.addEventListener('keydown', function (e) {
+          if (e.key === ' ') {
+            e.preventDefault();
+          }
+        });
+        telefonoInput.addEventListener('input', function () {
+          const limpio = this.value.replace(/\D/g, '').slice(0, 10);
+          if (this.value !== limpio) {
+            this.value = limpio;
+          }
+        });
+      }
+
+      if (correoInput) {
+        correoInput.addEventListener('keydown', function (e) {
+          if (e.key === ' ') {
+            e.preventDefault();
+          }
+        });
+        correoInput.addEventListener('input', function () {
+          const limpio = this.value.replace(/\s+/g, '').slice(0, 80);
+          if (this.value !== limpio) {
+            this.value = limpio;
+          }
+        });
+      }
+
+      if (formRes) {
+        formRes.addEventListener('submit', function (e) {
+          const nombre   = nombreInput ? nombreInput.value.trim() : '';
+          const telefono = telefonoInput ? telefonoInput.value.trim() : '';
+          const correo   = correoInput ? correoInput.value.trim() : '';
+
+          const nombreRegex = /^[\p{L}'’]+(?: [\p{L}'’]+)*$/u;
+          const correoRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+          if (!nombre || nombre.length > 100 || !nombreRegex.test(nombre)) {
+            e.preventDefault();
+            alert('El nombre del huésped solo puede contener letras, acentos y apóstrofes (sin espacios dobles).');
+            nombreInput?.focus();
+            return;
+          }
+
+          if (!/^\d{10}$/.test(telefono)) {
+            e.preventDefault();
+            alert('El teléfono debe contener exactamente 10 dígitos numéricos y sin espacios.');
+            telefonoInput?.focus();
+            return;
+          }
+
+          if (correo !== '' && (correo.length > 80 || !correoRegex.test(correo))) {
+            e.preventDefault();
+            alert('Ingresa un correo electrónico válido sin espacios.');
+            correoInput?.focus();
+            return;
+          }
+        });
+      }
     })();
 
     function sumarDiasISO(fechaISO, dias) {

@@ -82,7 +82,7 @@ $mensaje_error = '';
 $card_form = [
     'nombre_tarjeta' => $_SESSION['nombre'] ?? '',
     'numero_tarjeta' => '',
-    'vencimiento'    => '',
+    'vencimiento'    => ' / ',
     'cvv'            => '',
 ];
 
@@ -269,7 +269,7 @@ $mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_h
             </div>
             <div class="input-group">
               <label for="cardNumber">Número de tarjeta</label>
-              <div class="input-field"><input type="text" id="cardNumber" name="numero_tarjeta" inputmode="numeric" maxlength="19" pattern="[0-9 ]{13,23}" value="<?php echo htmlspecialchars($card_form['numero_tarjeta'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="•••• •••• •••• ••••" required></div>
+              <div class="input-field"><input type="text" id="cardNumber" name="numero_tarjeta" inputmode="numeric" maxlength="23" pattern="[0-9 ]{13,23}" value="<?php echo htmlspecialchars($card_form['numero_tarjeta'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="•••• •••• •••• ••••" required></div>
             </div>
             <div class="form-row">
               <div class="input-group">
@@ -339,6 +339,56 @@ $mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_h
       if (codeInput) {
         codeInput.addEventListener('input', () => {
           codeInput.value = codeInput.value.toUpperCase();
+        });
+      }
+
+      const cardNumberInput = document.querySelector('#cardNumber');
+      if (cardNumberInput) {
+        const formatearTarjeta = (raw) => {
+          const digits = raw.replace(/\D/g, '').slice(0, 19);
+          return digits.replace(/(\d{4})(?=\d)/g, '$1 ');
+        };
+
+        if (cardNumberInput.value) {
+          cardNumberInput.value = formatearTarjeta(cardNumberInput.value);
+        }
+
+        cardNumberInput.addEventListener('input', () => {
+          const formateado = formatearTarjeta(cardNumberInput.value);
+          if (cardNumberInput.value !== formateado) {
+            cardNumberInput.value = formateado;
+          }
+        });
+      }
+
+      const expInput = document.querySelector('#cardExp');
+      if (expInput) {
+        const formatearVencimiento = (raw) => {
+          const digits = raw.replace(/\D/g, '').slice(0, 4);
+          if (digits.length === 0) {
+            return ' / ';
+          }
+          if (digits.length <= 2) {
+            return digits + ' / ';
+          }
+          return digits.slice(0, 2) + ' / ' + digits.slice(2);
+        };
+
+        if (!expInput.value.trim()) {
+          expInput.value = ' / ';
+        }
+
+        expInput.addEventListener('focus', () => {
+          if (!expInput.value.trim() || expInput.value === '/') {
+            expInput.value = ' / ';
+          }
+          if (expInput.value === ' / ') {
+            expInput.setSelectionRange(0, 0);
+          }
+        });
+
+        expInput.addEventListener('input', () => {
+          expInput.value = formatearVencimiento(expInput.value);
         });
       }
 
