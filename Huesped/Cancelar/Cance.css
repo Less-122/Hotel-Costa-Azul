@@ -526,9 +526,6 @@ body {
   color: #a83232;
   font-weight: 600;
 }
-<<<<<<< HEAD
 
 /* El modal solo se ve cuando JS le agrega is-open */
 .modal-overlay:not(.is-open) { display: none !important; }
-=======
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
