@@ -108,7 +108,7 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="Cance.css">
+  <link rel="stylesheet" href="Cance.css?v=<?php echo @filemtime(__DIR__ . '/Cance.css'); ?>">
 </head>
 <body>
   <header class="navbar">
@@ -218,6 +218,7 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
     </div>
   </main>
 
+  <?php if ($reservacion && $puede_cancelar): ?>
   <div id="confirmModal" class="modal-overlay">
     <div class="modal-content">
       <h2>¿Estás seguro de cancelar?</h2>
@@ -230,7 +231,7 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
           <br>Monto pagado: <b>$<?php echo number_format($total_pagado, 2); ?></b> · Devolución a registrar: <b><?php echo $texto_devolucion_ui; ?></b>.
         <?php endif; ?>
       </p>
-      <form method="POST" id="cancelReservationForm">
+      <form method="POST" id="cancelReservationForm" action="Cance.php?codigo=<?php echo urlencode($codigo); ?>">
         <?php echo campoCsrf(); ?>
         <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>">
         <div class="modal-buttons">
@@ -242,6 +243,7 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
       </form>
     </div>
   </div>
+  <?php endif; ?>
 
   <script>
     function toggleModal(abrir) {
