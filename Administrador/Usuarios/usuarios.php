@@ -16,7 +16,6 @@ $mensaje_error = '';
 $id_sesion = (int) $_SESSION['id_usuario'];
 
 /**
-<<<<<<< HEAD
  * Valida nombres permitiendo únicamente letras (incluyendo acentos y ñ),
  * apóstrofes (' o ’) y espacios simples entre palabras (sin números, puntos ni guiones).
  */
@@ -26,18 +25,10 @@ function validarNombreFormato(string $nombre): bool {
     }
 
     // Evita espacios al inicio/final o múltiples espacios consecutivos
-=======
- * Valida nombres reales permitiendo letras (incluyendo acentos y ñ),
- * abreviaturas con punto (ej. Ma., J.), partículas en minúscula (de, del, la, etc.),
- * guiones (García-López) y apóstrofos (O'Neil / O’Neil), sin números ni espacios extra.
- */
-function validarNombreFormato(string $nombre): bool {
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
     if (!preg_match('/^[^\s]+( [^\s]+)*$/u', $nombre)) {
         return false;
     }
 
-<<<<<<< HEAD
     $normalizada = str_replace('’', "'", $nombre);
 
     // Cada palabra debe contener solo letras Unicode o apóstrofe (no solo un apóstrofe)
@@ -51,27 +42,6 @@ function validarNombreFormato(string $nombre): bool {
 function validarCorreoFormato(string $correo): bool {
     if ($correo === '' || preg_match('/\s/u', $correo)) {
         return false;
-=======
-    $particulasMinuscula = ['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'dos', 'van', 'von'];
-    $palabras = explode(' ', $nombre);
-
-    foreach ($palabras as $palabra) {
-        $palabraMinuscula = mb_strtolower($palabra, 'UTF-8');
-        if (in_array($palabraMinuscula, $particulasMinuscula, true)) {
-            if ($palabra !== $palabraMinuscula) {
-                return false;
-            }
-            continue;
-        }
-
-        $normalizada = str_replace('’', "'", $palabra);
-        $patronSegmento = '(?:\p{Lu}\.|\p{Lu}\p{Ll}+\.?)';
-        $patronPalabra  = '/^' . $patronSegmento . "(?:[-']" . $patronSegmento . ')*$/u';
-
-        if (!preg_match($patronPalabra, $normalizada)) {
-            return false;
-        }
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
     }
 
     if (mb_strlen($correo, 'UTF-8') > 80) {
@@ -171,11 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (mb_strlen($form['nombre'], 'UTF-8') > 100) {
             $mensaje_error = "El nombre no puede exceder los 100 caracteres.";
         } elseif (!validarNombreFormato($form['nombre'])) {
-<<<<<<< HEAD
             $mensaje_error = "El nombre solo puede contener letras, acentos y apóstrofes (ej. María López, O'Neil).";
-=======
-            $mensaje_error = "El nombre solo puede contener letras, puntos, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil).";
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
         } elseif (!preg_match('/^\d{10}$/', $form['contacto'])) {
             $mensaje_error = "El contacto debe contener exactamente 10 dígitos numéricos y sin espacios.";
         } elseif (!validarCorreoFormato($form['correo'])) {
@@ -186,13 +152,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $mensaje_error = "La contraseña no puede contener espacios.";
         } elseif ($validar_password && mb_strlen($password, 'UTF-8') < 8) {
             $mensaje_error = "La contraseña debe tener al menos 8 caracteres.";
-<<<<<<< HEAD
         } elseif ($validar_password && strlen($password) > 72) {
             $mensaje_error = "La contraseña no puede exceder más.";
-=======
-        } elseif (($id === 0 || $password !== '') && strlen($password) > 72) {
-            $mensaje_error = "La contraseña no puede exceder los 72 bytes.";
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
         } elseif ($id > 0 && $id === $id_sesion && $form['rol'] !== $usuario_actual['rol']) {
             $mensaje_error = "No puedes cambiar tu propio rol desde este panel.";
         } else {
@@ -375,22 +336,14 @@ $usuarios = $conexion->query(
                 <?php echo $editando ? 'Modifica los datos y guarda los cambios.' : 'Registra una nueva cuenta en el sistema.'; ?>
             </p>
 
-<<<<<<< HEAD
             <form id="userForm" method="POST" novalidate>
-=======
-            <form method="POST">
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
                 <?php echo campoCsrf(); ?>
                 <input type="hidden" name="id_usuario" value="<?php echo (int) $form['id_usuario']; ?>">
 
                 <div class="form-group">
                     <label for="nombre">Nombre completo</label>
                     <input type="text" id="nombre" name="nombre" maxlength="100"
-<<<<<<< HEAD
                            title="Solo letras, acentos y apóstrofes (ej. María López, O'Neil)."
-=======
-                           title="Letras, partículas en minúscula (de, del, la), guiones o apóstrofos (ej. María de la Cruz, García-López, O’Neil)."
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
                            value="<?php echo htmlspecialchars($form['nombre'], ENT_QUOTES, 'UTF-8'); ?>" required>
                 </div>
 

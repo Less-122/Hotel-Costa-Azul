@@ -342,7 +342,6 @@ $mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_h
         });
       }
 
-<<<<<<< HEAD
       const cardNumberInput = document.querySelector('#cardNumber');
       if (cardNumberInput) {
         const formatearTarjeta = (raw) => {
@@ -393,8 +392,6 @@ $mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_h
         });
       }
 
-=======
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
       const payForm = document.querySelector('#payReservationForm');
       if (payForm) {
         payForm.addEventListener('submit', () => {

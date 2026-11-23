@@ -220,7 +220,6 @@ try {
 
                 <div class="form-group">
                     <label for="roomPrice">Precio por noche</label>
-<<<<<<< HEAD
                     <input
                         type="number"
                         id="roomPrice"
@@ -233,9 +232,6 @@ try {
                         placeholder="0.00"
                         required
                     >
-=======
-                    <input type="text" id="roomPrice" name="precio" inputmode="decimal" pattern="^\d+(?:\.\d{1,2})?$" value="<?php echo htmlspecialchars($form['precio'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="$ 0.00" required>
->>>>>>> d1611f1f17db77f1f49c62dccd3b4306a96d8a14
                 </div>
 
                 <div class="form-group">
