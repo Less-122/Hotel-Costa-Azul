@@ -7,6 +7,7 @@ verificarAcceso('huesped');
 
 $id_huesped = (int) $_SESSION['id_usuario'];
 $codigo     = strtoupper(trim($_REQUEST['codigo'] ?? ''));
+$modo_cancelar_penalizacion = isset($_REQUEST['cancelar_penalizacion']) && (string) $_REQUEST['cancelar_penalizacion'] === '1';
 
 /** Valida un número de tarjeta usando el algoritmo de Luhn. */
 function validarLuhn(string $digitos): bool {
@@ -78,6 +79,13 @@ function buscarReservacion(PDO $conexion, string $codigo, int $id_huesped, bool 
 
 $mensaje_exito = isset($_GET['ok']) ? "Pago procesado correctamente." : '';
 $mensaje_error = '';
+if ($flash = flashGet()) {
+    if ($flash['tipo'] === 'ok') {
+        $mensaje_exito = $flash['msg'];
+    } else {
+        $mensaje_error = $flash['msg'];
+    }
+}
 
 $card_form = [
     'nombre_tarjeta' => $_SESSION['nombre'] ?? '',
@@ -128,16 +136,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $mensaje_error = "El monto debe ser mayor a 0 y no superar tu saldo pendiente ($"
                                    . number_format($r['saldo'], 2) . ").";
                 } else {
-                    $tipo = (abs($monto - $r['saldo']) < 0.005) ? 'Liquidación' : 'Anticipo';
+                    $infoPen = ($r['estado'] === 'Activa')
+                        ? estadoPenalizacionCancelacion($conexion, (int) $r['id_reservacion'])
+                        : null;
+                    $pendientePen = $infoPen ? (float) $infoPen['pendiente'] : 0.0;
+                    $debeCancelarTrasPago = ($r['estado'] === 'Activa')
+                        && ($pendientePen > 0.0)
+                        && ($modo_cancelar_penalizacion || $pendientePen > 0.0);
 
-                    $conexion->prepare(
-                        "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
-                         VALUES (?, NOW(), ?, 'Pasarela en línea', ?, NULL)"
-                    )->execute([$monto, $tipo, $r['id_reservacion']]);
+                    if ($debeCancelarTrasPago && $monto < $pendientePen) {
+                        $mensaje_error = "Para cancelar esta reservación debes pagar al menos la penalización pendiente de $"
+                                       . number_format($pendientePen, 2) . ".";
+                    } else {
+                        $tipo = (abs($monto - $r['saldo']) < 0.005) ? 'Liquidación' : 'Anticipo';
 
-                    $conexion->commit();
-                    header("Location: pagar.php?codigo=" . urlencode($codigo) . "&ok=1");
-                    exit;
+                        $conexion->prepare(
+                            "INSERT INTO pago (monto, fecha_hora, tipo_pago, canal_pago, id_reservacion, id_recepcionista)
+                             VALUES (?, NOW(), ?, 'Pasarela en línea', ?, NULL)"
+                        )->execute([$monto, $tipo, $r['id_reservacion']]);
+
+                        $conexion->commit();
+
+                        if ($debeCancelarTrasPago) {
+                            try {
+                                $resCancel = ejecutarCancelacion($conexion, (int) $r['id_reservacion'], [
+                                    'id_actor'                 => $id_huesped,
+                                    'id_huesped'               => $id_huesped,
+                                    'id_staff'                 => null,
+                                    'canal'                    => 'Sistema',
+                                    'exigir_pago_penalizacion' => true,
+                                ]);
+                                flashSet('ok', 'Pago de penalización registrado. ' . mensajeCancelacion($resCancel));
+                                header("Location: ../Cancelar/Cance.php?codigo=" . urlencode($codigo));
+                                exit;
+                            } catch (RuntimeException $e) {
+                                $mensaje_error = "El pago se registró, pero no se pudo completar la cancelación: " . $e->getMessage();
+                            } catch (PDOException $e) {
+                                error_log('Pagar - cancelar tras penalización [' . $e->getCode() . ']: ' . $e->getMessage());
+                                $mensaje_error = "El pago se registró, pero ocurrió un error al completar la cancelación. Inténtalo desde Cancelar reservación.";
+                            }
+                        } else {
+                            header("Location: pagar.php?codigo=" . urlencode($codigo) . "&ok=1");
+                            exit;
+                        }
+                    }
                 }
             } catch (PDOException $e) {
                 error_log('Pagar - procesar pago: ' . $e->getMessage());
@@ -153,6 +195,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // BUSCAR (solo entre las reservaciones del huésped en sesión)
 $reservacion = ($codigo !== '') ? buscarReservacion($conexion, $codigo, $id_huesped) : null;
+$infoPenUi   = ($reservacion && $reservacion['estado'] === 'Activa')
+    ? estadoPenalizacionCancelacion($conexion, (int) $reservacion['id_reservacion'])
+    : null;
+$falta_penalizacion_ui = $infoPenUi ? (float) $infoPenUi['pendiente'] : 0.0;
+$monto_sugerido_ui = ($falta_penalizacion_ui > 0 && $reservacion)
+    ? min((float) $reservacion['saldo'], $falta_penalizacion_ui)
+    : ($reservacion ? (float) $reservacion['saldo'] : 0.0);
+
 $puede_pagar = $reservacion
     && in_array($reservacion['estado'], ESTADOS_ABIERTOS, true)
     && $reservacion['saldo'] > 0;
@@ -248,6 +298,11 @@ $mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_h
             <span class="balance-label">Saldo pendiente</span>
             <span class="balance-amount">$<?php echo number_format($reservacion['saldo'], 2); ?></span>
           </div>
+          <?php if ($falta_penalizacion_ui > 0): ?>
+            <p class="info-text" style="margin-top: 10px;">
+              Esta reservación tiene una penalización por cancelación tardía pendiente de <b>$<?php echo number_format($falta_penalizacion_ui, 2); ?></b>. Al pagar este monto se completará la cancelación.
+            </p>
+          <?php endif; ?>
         </div>
       <?php elseif ($codigo !== ''): ?>
         <p class="not-found">No se encontró ninguna reservación tuya con ese código.</p>
@@ -257,11 +312,14 @@ $mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_h
     <aside class="right-section">
       <div class="card-box">
         <?php if ($puede_pagar): ?>
-          <h2>Datos de la tarjeta</h2>
+          <h2><?php echo $falta_penalizacion_ui > 0 ? 'Pagar penalización' : 'Datos de la tarjeta'; ?></h2>
           <!-- Los datos sensibles de la tarjeta se validan en el servidor y no se almacenan -->
           <form method="POST" autocomplete="off" id="payReservationForm">
             <?php echo campoCsrf(); ?>
             <input type="hidden" name="codigo" value="<?php echo htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8'); ?>">
+            <?php if ($modo_cancelar_penalizacion): ?>
+              <input type="hidden" name="cancelar_penalizacion" value="1">
+            <?php endif; ?>
 
             <div class="input-group">
               <label for="cardName">Nombre en la tarjeta</label>
@@ -282,13 +340,20 @@ $mis_reservaciones = ($codigo === '') ? reservacionesDelHuesped($conexion, $id_h
               </div>
             </div>
             <div class="input-group input-group-spaced">
-              <label for="amountInput">Monto a abonar</label>
+              <label for="amountInput">
+                <?php echo $falta_penalizacion_ui > 0 ? 'Monto de penalización a pagar (mín. $' . number_format($falta_penalizacion_ui, 2) . ')' : 'Monto a abonar'; ?>
+              </label>
               <div class="input-field">
-                <input type="number" id="amountInput" name="monto" step="0.01" min="0.01"
-                       max="<?php echo $reservacion['saldo']; ?>" value="<?php echo $reservacion['saldo']; ?>" required>
+                <input type="number" id="amountInput" name="monto" step="0.01"
+                       min="<?php echo $falta_penalizacion_ui > 0 ? $falta_penalizacion_ui : '0.01'; ?>"
+                       max="<?php echo $reservacion['saldo']; ?>"
+                       value="<?php echo $monto_sugerido_ui; ?>" required>
               </div>
             </div>
-            <button type="submit" class="btn-pay-submit"><i class="fa-solid fa-lock"></i> Pagar</button>
+            <button type="submit" class="btn-pay-submit">
+              <i class="fa-solid fa-lock"></i>
+              <?php echo $falta_penalizacion_ui > 0 ? 'Pagar y cancelar reservación' : 'Pagar'; ?>
+            </button>
           </form>
         <?php elseif ($reservacion && !in_array($reservacion['estado'], ESTADOS_ABIERTOS, true)): ?>
           <h2>Pago en línea no disponible</h2>

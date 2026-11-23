@@ -14,7 +14,8 @@
  *   - Devolución resta (< 0) y es lo único que se inserta al cancelar.
  *   - La penalización retenida NO se inserta como fila: es lo que queda
  *     neto en pago tras la devolución. La parte de penalización que no
- *     estaba pagada se anota en las notas como "pendiente de cobro".
+ *     estaba pagada se anota en las notas como "pendiente de cobro" (cuando
+ *     no se exige pago previo, por ejemplo en no-show).
  */
 
 const ESTADOS_RESERVACION    = ['Activa', 'En curso', 'Finalizada', 'Cancelada'];
@@ -182,12 +183,65 @@ function liquidarCancelacion(float $pagado, float $penalizacion): array {
 }
 
 /**
+ * Consulta la situación de penalización para cancelar una reservación
+ * (evaluación en el momento actual + sumatoria actual de pagos en BD).
+ */
+function estadoPenalizacionCancelacion(PDO $c, int $id_reservacion): array {
+    $st = $c->prepare(
+        "SELECT r.estado, r.fecha_entrada, t.precio_noche,
+                p.horas_anticipacion, p.cobra_primera_noche, p.descripcion AS politica_descripcion
+         FROM reservacion r
+         JOIN tarifa t ON t.id_tarifa = r.id_tarifa
+         LEFT JOIN politica_cancelacion p ON p.id_politica = r.id_politica
+         WHERE r.id_reservacion = ?"
+    );
+    $st->execute([$id_reservacion]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+
+    if (!$r) {
+        return [
+            'existe'       => false,
+            'puede'        => false,
+            'motivo'       => 'La reservación no existe.',
+            'fuera_plazo'  => false,
+            'penalizacion' => 0.0,
+            'pagado'       => 0.0,
+            'retenido'     => 0.0,
+            'reembolso'    => 0.0,
+            'pendiente'    => 0.0,
+        ];
+    }
+
+    $eval = evaluarCancelacion($r, new DateTime(), false);
+
+    $stPago = $c->prepare("SELECT COALESCE(SUM(monto), 0) FROM pago WHERE id_reservacion = ?");
+    $stPago->execute([$id_reservacion]);
+    $pagado = round((float) $stPago->fetchColumn(), 2);
+
+    $pen = round((float) $eval['penalizacion'], 2);
+    $liq = liquidarCancelacion($pagado, $pen);
+
+    return [
+        'existe'       => true,
+        'puede'        => (bool) $eval['puede'],
+        'motivo'       => (string) $eval['motivo'],
+        'fuera_plazo'  => (bool) $eval['fuera_plazo'],
+        'penalizacion' => $pen,
+        'pagado'       => $pagado,
+        'retenido'     => $liq['retenido'],
+        'reembolso'    => $liq['reembolso'],
+        'pendiente'    => $liq['pendiente'],
+    ];
+}
+
+/**
  * Cancela (o marca no-show) dentro de una transacción que bloquea la
  * reservación y recalcula todo con lo que hay en la BD en ese momento.
  *
  * $opts: id_actor (int, quién modifica), id_huesped (int|null, exige que la
  *        reservación sea de ese huésped), id_staff (int|null, se guarda en
- *        pago.id_recepcionista), canal ('Sistema'|'Recepción'), noshow (bool).
+ *        pago.id_recepcionista), canal ('Sistema'|'Recepción'), noshow (bool),
+ *        exigir_pago_penalizacion (bool, por defecto true cuando no es noshow).
  * Lanza RuntimeException con mensaje para el usuario si no procede, y
  * PDOException si falla la BD (el llamador la registra en el log).
  */
@@ -197,6 +251,9 @@ function ejecutarCancelacion(PDO $c, int $id_reservacion, array $opts): array {
     $id_staff   = $opts['id_staff'] ?? null;
     $canal      = ($opts['canal'] ?? 'Sistema') === 'Recepción' ? 'Recepción' : 'Sistema';
     $noshow     = !empty($opts['noshow']);
+    $exigirPagoPenalizacion = array_key_exists('exigir_pago_penalizacion', $opts)
+        ? (bool) $opts['exigir_pago_penalizacion']
+        : !$noshow;
 
     $c->beginTransaction();
     try {
@@ -229,6 +286,14 @@ function ejecutarCancelacion(PDO $c, int $id_reservacion, array $opts): array {
 
         $pen = $eval['penalizacion'];
         $liq = liquidarCancelacion($pagado, $pen);
+
+        if ($exigirPagoPenalizacion && $liq['pendiente'] > 0) {
+            throw new RuntimeException(
+                'Debes pagar primero la penalización pendiente de $'
+                . number_format($liq['pendiente'], 2)
+                . ' antes de poder cancelar la reservación.'
+            );
+        }
 
         $notas = [];
         if ($pen > 0) {

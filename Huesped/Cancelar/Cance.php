@@ -24,6 +24,7 @@ $costo_total          = 0.0;
 $total_pagado         = 0.0;
 $monto_penalizacion   = 0.0;
 $monto_reembolso      = 0.0;
+$falta_penalizacion   = 0.0;
 $fuera_plazo_gratuito = false;
 $puede_cancelar       = false;
 $motivo_bloqueo       = '';
@@ -60,7 +61,9 @@ try {
             $total_pagado = round((float) $stmt_pago->fetchColumn(), 2);
 
             if ($puede_cancelar) {
-                $monto_reembolso = liquidarCancelacion($total_pagado, $monto_penalizacion)['reembolso'];
+                $liq                = liquidarCancelacion($total_pagado, $monto_penalizacion);
+                $monto_reembolso    = $liq['reembolso'];
+                $falta_penalizacion = $liq['pendiente'];
             }
         }
     } else {
@@ -76,12 +79,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validarCsrfToken($_POST['csrf_token'] ?? null)) {
         $mensaje_error = 'Error de validación de seguridad. Por favor, recarga la página e inténtalo de nuevo.';
     } elseif ($reservacion && $puede_cancelar) {
+        if ($falta_penalizacion > 0) {
+            flashSet(
+                'error',
+                'Para cancelar con penalización primero debes pagar $'
+                . number_format($falta_penalizacion, 2) . '.'
+            );
+            header(
+                'Location: ../Pagar/pagar.php?codigo=' . urlencode($codigo)
+                . '&cancelar_penalizacion=1'
+            );
+            exit;
+        }
+
         try {
             $res = ejecutarCancelacion($conexion, (int) $reservacion['id_reservacion'], [
-                'id_actor'   => $id_huesped,
-                'id_huesped' => $id_huesped,
-                'id_staff'   => null,
-                'canal'      => 'Sistema',
+                'id_actor'                 => $id_huesped,
+                'id_huesped'               => $id_huesped,
+                'id_staff'                 => null,
+                'canal'                    => 'Sistema',
+                'exigir_pago_penalizacion' => true,
             ]);
             flashSet('ok', mensajeCancelacion($res));
             header('Location: Cance.php?codigo=' . urlencode($codigo));
@@ -97,6 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $cancelada = $reservacion && $reservacion['estado'] === 'Cancelada';
 $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembolso, 2) : '$0.00';
+$requiere_pago_previo = (!$cancelada && $puede_cancelar && $falta_penalizacion > 0);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -187,7 +205,10 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
           <p class="policy-text-main"><?php echo htmlspecialchars($texto_politica, ENT_QUOTES, 'UTF-8'); ?></p>
           <?php if (!$cancelada && $fuera_plazo_gratuito && $monto_penalizacion > 0): ?>
             <p class="policy-warning">
-              <i class="fa-solid fa-circle-exclamation"></i> El plazo de cancelación gratuita ya venció. Si cancelas ahora, se aplicará el cobro de la primera noche por <b>$<?php echo number_format($monto_penalizacion, 2); ?></b>.
+              <i class="fa-solid fa-circle-exclamation"></i> El plazo de cancelación gratuita ya venció. Se aplicará el cobro de la primera noche por <b>$<?php echo number_format($monto_penalizacion, 2); ?></b>.
+              <?php if ($falta_penalizacion > 0): ?>
+                Como aún no has cubierto ese cargo (pagado: $<?php echo number_format($total_pagado, 2); ?>), primero deberás pagar <b>$<?php echo number_format($falta_penalizacion, 2); ?></b> para completar la cancelación.
+              <?php endif; ?>
             </p>
           <?php endif; ?>
           <?php if (!$cancelada && $total_pagado > 0): ?>
@@ -206,6 +227,10 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
               <button type="button" class="btn-init-cancel btn-blocked" disabled title="<?php echo htmlspecialchars($motivo_bloqueo, ENT_QUOTES, 'UTF-8'); ?>">Cancelación no disponible</button>
               <p class="cancel-blocked-text"><?php echo htmlspecialchars($motivo_bloqueo, ENT_QUOTES, 'UTF-8'); ?></p>
             </div>
+          <?php elseif ($requiere_pago_previo): ?>
+            <a class="btn-init-cancel" href="../Pagar/pagar.php?codigo=<?php echo urlencode($codigo); ?>&amp;cancelar_penalizacion=1">
+              Pagar penalización ($<?php echo number_format($falta_penalizacion, 2); ?>) y cancelar
+            </a>
           <?php else: ?>
             <button type="button" class="btn-init-cancel" onclick="toggleModal(true)">
               <?php echo $monto_penalizacion > 0 ? 'Cancelar con cargo ($' . number_format($monto_penalizacion, 2) . ')' : 'Cancelar reservación'; ?>
@@ -218,7 +243,7 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
     </div>
   </main>
 
-  <?php if ($reservacion && $puede_cancelar): ?>
+  <?php if ($reservacion && $puede_cancelar && !$requiere_pago_previo): ?>
   <div id="confirmModal" class="modal-overlay">
     <div class="modal-content">
       <h2>¿Estás seguro de cancelar?</h2>
@@ -247,7 +272,10 @@ $texto_devolucion_ui = $monto_reembolso > 0 ? '-$' . number_format($monto_reembo
 
   <script>
     function toggleModal(abrir) {
-      document.getElementById('confirmModal').classList.toggle('is-open', abrir);
+      const modal = document.getElementById('confirmModal');
+      if (modal) {
+        modal.classList.toggle('is-open', abrir);
+      }
     }
 
     (() => {
